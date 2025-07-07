@@ -114,6 +114,17 @@
             </div>
         </section>
 
+        <!-- QUICK ADD SECTION - NEW -->
+        <section id="quick-add-section" class="mb-6">
+            <h2 class="text-xl font-semibold mb-3 text-gray-800">Ghi nhanh</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button class="quick-add-btn bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-100 transition" data-description="Cafe" data-amount="25000" data-category="Ăn uống" data-source="cash">☕ Cafe 25k</button>
+                <button class="quick-add-btn bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-100 transition" data-description="Ăn sáng" data-amount="30000" data-category="Ăn uống" data-source="cash">🍜 Ăn sáng 30k</button>
+                <button class="quick-add-btn bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-100 transition" data-description="Đổ xăng" data-amount="50000" data-category="Di chuyển" data-source="cash">⛽ Đổ xăng 50k</button>
+                <button class="quick-add-btn bg-white border border-gray-300 text-gray-700 font-semibold py-2 px-4 rounded-lg shadow-sm hover:bg-gray-100 transition" data-description="Gửi xe" data-amount="5000" data-category="Di chuyển" data-source="cash">🅿️ Gửi xe 5k</button>
+            </div>
+        </section>
+
         <!-- ACTION BUTTONS -->
         <section class="flex justify-center gap-4 mb-6">
              <button id="open-ai-modal-btn" class="flex-1 bg-blue-600 text-white font-semibold py-3 px-4 rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 transition duration-200 flex items-center justify-center gap-2">
@@ -465,6 +476,21 @@
                     return;
                 }
                 toggleModal(aiModal, true)
+            });
+
+            // NEW: Quick Add Buttons Listener
+            document.getElementById('quick-add-section').addEventListener('click', (e) => {
+                const button = e.target.closest('.quick-add-btn');
+                if (button) {
+                    const transactionData = {
+                        description: button.dataset.description,
+                        amount: parseFloat(button.dataset.amount),
+                        category: button.dataset.category,
+                        source: button.dataset.source,
+                        type: 'expense' // Quick adds are always expenses
+                    };
+                    addTransaction(transactionData);
+                }
             });
 
             document.getElementById('cancel-add-btn').addEventListener('click', () => toggleModal(addModal, false));
