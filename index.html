@@ -1,20 +1,32 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, doc, addDoc, getDocs, onSnapshot, setDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
+import { getFirestore, collection, doc, addDoc, onSnapshot, setDoc, query, writeBatch } from 'firebase/firestore';
 import { Bar, Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 
-// Register Chart.js components
+// Đăng ký các thành phần của Chart.js
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
 
-// --- Helper Functions & Icons ---
+// --- Hàm trợ giúp & Biểu tượng ---
 
+/**
+ * Định dạng số tiền thành tiền tệ Việt Nam Đồng (VND).
+ * @param {number} amount - Số tiền cần định dạng.
+ * @returns {string} Chuỗi số tiền đã định dạng.
+ */
 const formatCurrency = (amount) => {
     if (typeof amount !== 'number') return '0 ₫';
     return amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
 };
 
+/**
+ * Component biểu tượng SVG.
+ * @param {object} props - Các thuộc tính của component.
+ * @param {string} props.name - Tên của biểu tượng (ví dụ: 'dashboard', 'plus').
+ * @param {string} [props.className] - Các lớp CSS bổ sung.
+ * @returns {JSX.Element} Biểu tượng SVG.
+ */
 const Icon = ({ name, className }) => {
     const icons = {
         dashboard: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h12A2.25 2.25 0 0020.25 14.25V3.75M3.75 3h16.5M3.75 3v1.5M16.5 3v1.5m-12.75 3h11.25" />,
@@ -25,14 +37,14 @@ const Icon = ({ name, className }) => {
         reports: <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h15.75c.621 0 1.125.504 1.125 1.125v6.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 19.875v-6.75zM3 8.625c0-.621.504-1.125 1.125-1.125h15.75c.621 0 1.125.504 1.125 1.125v.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 9.375v-.75zM3.75 3a1.125 1.125 0 00-1.125 1.125v.75c0 .621.504 1.125 1.125 1.125h16.5c.621 0 1.125-.504 1.125-1.125v-.75A1.125 1.125 0 0020.25 3H3.75z" />,
         ai: <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 16.5V21m3.75-18v1.5M19.5 8.25h-1.5m-16.5 0h1.5m15 3.75h-1.5m-15 0h1.5m15 3.75h-1.5m-3.75 3.75v1.5m-3-19.5v1.5" />,
         plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
-        print: <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.045-.247.082-.496.111-.746A48.97 48.97 0 0012 15.75c-2.551 0-5.056.2-7.5.582a48.971 48.971 0 00.111.746m14.78 0a58.58 58.58 0 00-4.817-1.579 58.58 58.58 0 00-4.817 1.579m14.78 0L12 21m-1.657-.343a32.025 32.025 0 01-4.132 0L6.34 18m11.32 0l-1.657 2.657a32.025 32.025 0 01-4.132 0L6.34 18m11.32 0l-1.657-2.657a32.025 32.025 0 00-4.132 0L6.34 18m6.34-4.875A3.75 3.75 0 0012 6.375h-1.5a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5v-1.5a3.75 3.75 0 00-3.75-3.75H6.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.75 3.75 0 003.75-3.75v-1.5c0-.621-.504-1.125-1.125-1.125H12a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5v-1.5a3.75 3.75 0 00-3.75-3.75h-1.5a1.125 1.125 0 00-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125H12a3.75 3.75 0 003.75-3.75v-1.5c0-.621-.504-1.125-1.125-1.125h-1.5a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.75 3.75 0 003.75-3.75V9.375" />,
+        print: <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.045-.247.082-.496.111-.746A48.97 48.97 0 0012 15.75c-2.551 0-5.056.2-7.5.582a48.971 48.971 0 00.111.746m14.78 0a58.58 58.58 0 00-4.817-1.579 58.58 58.58 0 00-4.817 1.579m14.78 0L12 21m-1.657-.343a32.025 32.025 0 01-4.132 0L6.34 18m11.32 0l-1.657 2.657a32.025 32.025 0 01-4.132 0L6.34 18m11.32 0l-1.657-2.657a32.025 32.025 0 00-4.132 0L6.34 18m6.34-4.875A3.75 3.75 0 0012 6.375h-1.5a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5v-1.5a3.75 3.75 0 00-3.75-3.75H6.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.75 3.75 0 003.75-3.75v-1.5c0-.621-.504-1.125-1.125-1.125H12a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5v-1.5a3.75 3.75 0 00-3.75-3.75h-1.5a1.125 1.125 0 00-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125H12a3.75 3.75 0 003.75-3.75v-1.5c0-.621-.504-1.125-1.125-1.125h-1.5a3.75 3.75 0 00-3.75 3.75V9.375" />,
         send: <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />,
         loading: <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" />,
     };
     return <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className || "w-6 h-6"}>{icons[name]}</svg>;
 };
 
-// --- Firebase Setup ---
+// --- Cài đặt Firebase ---
 const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
@@ -45,22 +57,22 @@ try {
     console.error("Firebase initialization failed:", e);
 }
 
-
-// --- Main App Component ---
+// --- Component chính của ứng dụng ---
 export default function App() {
     const [page, setPage] = useState('dashboard');
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // Data states
+    // Trạng thái dữ liệu
     const [products, setProducts] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [orders, setOrders] = useState([]);
     const [transactions, setTransactions] = useState([]);
 
-    // Firestore paths
+    // Đường dẫn Firestore
     const getCollectionPath = (collectionName) => user ? `/artifacts/${appId}/users/${user.uid}/${collectionName}` : null;
     
+    // Khởi tạo Firebase và xác thực người dùng
     useEffect(() => {
         if (!auth) {
             setLoading(false);
@@ -73,9 +85,9 @@ export default function App() {
             } else {
                 try {
                     if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                         await signInWithCustomToken(auth, __initial_auth_token);
+                        await signInWithCustomToken(auth, __initial_auth_token);
                     } else {
-                         await signInAnonymously(auth);
+                        await signInAnonymously(auth);
                     }
                 } catch (error) {
                     console.error("Error signing in:", error);
@@ -86,6 +98,7 @@ export default function App() {
         return () => unsubscribe();
     }, []);
 
+    // Lắng nghe thay đổi dữ liệu từ Firestore
     useEffect(() => {
         if (!user) return;
 
@@ -112,26 +125,42 @@ export default function App() {
         return () => unsubscribers.forEach(unsub => unsub());
     }, [user]);
 
+    /**
+     * Thêm tài liệu vào Firestore.
+     * @param {string} collectionName - Tên bộ sưu tập.
+     * @param {object} data - Dữ liệu cần thêm.
+     * @returns {Promise<DocumentReference>} Tham chiếu đến tài liệu mới.
+     */
     const addDocToFirestore = async (collectionName, data) => {
         const path = getCollectionPath(collectionName);
         if (!path) throw new Error("User not authenticated");
         return await addDoc(collection(db, path), data);
     };
 
+    /**
+     * Cập nhật hoặc tạo tài liệu trong Firestore.
+     * @param {string} collectionName - Tên bộ sưu tập.
+     * @param {string} docId - ID của tài liệu.
+     * @param {object} data - Dữ liệu cần cập nhật/tạo.
+     * @returns {Promise<void>}
+     */
     const setDocInFirestore = async (collectionName, docId, data) => {
         const path = getCollectionPath(collectionName);
         if (!path) throw new Error("User not authenticated");
         await setDoc(doc(db, path, docId), data, { merge: true });
     };
 
+    // Hiển thị trạng thái tải ứng dụng
     if (loading) {
         return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Đang tải ứng dụng...</div></div>;
     }
     
+    // Hiển thị thông báo nếu không thể xác thực người dùng
     if (!user) {
         return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Không thể xác thực người dùng. Vui lòng tải lại trang.</div></div>;
     }
 
+    // Render trang hiện tại dựa trên state 'page'
     const renderPage = () => {
         const props = { products, customers, orders, transactions, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user };
         switch (page) {
@@ -145,6 +174,7 @@ export default function App() {
         }
     };
 
+    // Các mục điều hướng
     const navItems = [
         { id: 'dashboard', name: 'Bảng điều khiển', icon: 'dashboard' },
         { id: 'products', name: 'Sản phẩm', icon: 'products' },
@@ -156,6 +186,7 @@ export default function App() {
 
     return (
         <div className="flex h-screen bg-slate-100 font-sans">
+            {/* Thanh điều hướng bên trái */}
             <nav className="w-64 bg-white border-r border-slate-200 flex flex-col">
                 <div className="p-4 border-b border-slate-200">
                     <h1 className="text-xl font-bold text-slate-800">Ngô Văn Đô</h1>
@@ -176,21 +207,31 @@ export default function App() {
                     <p className="text-xs text-slate-400 truncate px-2" title={`User ID: ${user.uid}`}>User ID: {user.uid}</p>
                 </div>
             </nav>
+            {/* Nội dung chính */}
             <main className="flex-1 flex flex-col overflow-hidden">
                 <div className="flex-1 p-6 overflow-y-auto">
                     {renderPage()}
                 </div>
+                {/* Component thư ký AI */}
                 <AiSecretary {...{ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }} />
             </main>
         </div>
     );
 }
 
-// --- Page Components ---
+// --- Các Component Trang ---
 
+/**
+ * Component Bảng điều khiển (Dashboard).
+ * Hiển thị tổng quan về các số liệu kinh doanh.
+ */
 const Dashboard = ({ products, orders, transactions, customers }) => {
+    // Tính toán tổng giá trị tồn kho
     const totalInventoryValue = useMemo(() => products.reduce((sum, p) => sum + (p.stock || 0) * (p.purchasePrice || 0), 0), [products]);
+    // Tính toán tổng doanh thu
     const totalRevenue = useMemo(() => orders.reduce((sum, o) => sum + (o.total || 0), 0), [orders]);
+    
+    // Tính toán tổng thu, chi, số dư tiền mặt và ngân hàng
     const { totalIncome, totalExpense, cashBalance, bankBalance } = useMemo(() => {
         let income = 0, expense = 0, cash = 0, bank = 0;
         transactions.forEach(t => {
@@ -207,6 +248,7 @@ const Dashboard = ({ products, orders, transactions, customers }) => {
         return { totalIncome: income, totalExpense: expense, cashBalance: cash, bankBalance: bank };
     }, [transactions]);
     
+    // Tính toán tổng công nợ phải thu
     const totalDebt = useMemo(() => {
         const customerDebts = {};
         customers.forEach(c => customerDebts[c.id] = 0);
@@ -221,7 +263,7 @@ const Dashboard = ({ products, orders, transactions, customers }) => {
         return Object.values(customerDebts).reduce((sum, debt) => sum + debt, 0);
     }, [orders, customers]);
 
-
+    // Dữ liệu thống kê hiển thị trên Dashboard
     const stats = [
         { title: 'Tổng giá trị kho', value: formatCurrency(totalInventoryValue), color: 'bg-blue-500' },
         { title: 'Tổng doanh thu', value: formatCurrency(totalRevenue), color: 'bg-green-500' },
@@ -232,6 +274,7 @@ const Dashboard = ({ products, orders, transactions, customers }) => {
     return (
         <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Bảng điều khiển</h2>
+            {/* Các thẻ thống kê */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                 {stats.map(stat => (
                     <div key={stat.title} className="bg-white p-6 rounded-lg shadow">
@@ -240,6 +283,7 @@ const Dashboard = ({ products, orders, transactions, customers }) => {
                     </div>
                 ))}
             </div>
+            {/* Biểu đồ Thu vs Chi và Cơ cấu tài sản */}
             <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="bg-white p-6 rounded-lg shadow">
                     <h3 className="font-bold text-slate-800 mb-4">Thu vs Chi</h3>
@@ -266,16 +310,22 @@ const Dashboard = ({ products, orders, transactions, customers }) => {
     );
 };
 
+/**
+ * Component Quản lý Sản phẩm.
+ * Cho phép thêm, chỉnh sửa và xem danh sách sản phẩm.
+ */
 const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState(null);
     const [formData, setFormData] = useState({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
 
+    // Xử lý thay đổi input của form
     const handleInputChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // Xử lý gửi form (thêm/cập nhật sản phẩm)
     const handleSubmit = async (e) => {
         e.preventDefault();
         const data = {
@@ -296,12 +346,14 @@ const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
         }
     };
 
+    // Đặt lại form về trạng thái ban đầu
     const resetForm = () => {
         setShowForm(false);
         setEditingProduct(null);
         setFormData({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
     };
 
+    // Xử lý khi người dùng muốn chỉnh sửa sản phẩm
     const handleEdit = (product) => {
         setEditingProduct(product);
         setFormData({
@@ -322,6 +374,7 @@ const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
                 </button>
             </div>
 
+            {/* Form thêm/chỉnh sửa sản phẩm */}
             {showForm && (
                 <div className="bg-white p-6 rounded-lg shadow mb-6">
                     <h3 className="font-bold text-lg mb-4">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
@@ -338,6 +391,7 @@ const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
                 </div>
             )}
 
+            {/* Bảng danh sách sản phẩm */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="w-full">
                     <thead className="bg-slate-50 border-b">
@@ -368,12 +422,17 @@ const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
     );
 };
 
+/**
+ * Component Quản lý Đơn hàng.
+ * Cho phép tạo đơn hàng mới và xem danh sách các đơn hàng đã tạo.
+ */
 const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionPath, db }) => {
     const [showForm, setShowForm] = useState(false);
     const [cart, setCart] = useState([]);
     const [selectedCustomer, setSelectedCustomer] = useState('');
     const [invoice, setInvoice] = useState(null);
 
+    // Thêm sản phẩm vào giỏ hàng
     const handleAddToCart = (product) => {
         const existing = cart.find(item => item.productId === product.id);
         if (existing) {
@@ -387,6 +446,7 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
         }
     };
 
+    // Cập nhật số lượng sản phẩm trong giỏ hàng
     const updateQuantity = (productId, quantity) => {
         const product = products.find(p => p.id === productId);
         if (quantity > 0 && quantity <= product.stock) {
@@ -394,15 +454,17 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
         }
     };
     
+    // Xóa sản phẩm khỏi giỏ hàng
     const removeFromCart = (productId) => {
         setCart(cart.filter(item => item.productId !== productId));
     };
 
+    // Tính tổng giá trị đơn hàng
     const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
+    // Xử lý khi gửi đơn hàng
     const handleSubmitOrder = async () => {
         if (cart.length === 0 || !selectedCustomer) {
-            // Using a custom modal/alert in the future would be better
             console.warn("Vui lòng chọn sản phẩm và khách hàng.");
             return;
         }
@@ -413,12 +475,13 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
             items: cart.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity })),
             total: total,
             createdAt: new Date().toISOString(),
-            paidAmount: 0, // Default paid amount
+            paidAmount: 0, // Mặc định số tiền đã thanh toán
         };
 
         try {
             const orderRef = await addDocToFirestore('orders', orderData);
 
+            // Cập nhật tồn kho sản phẩm bằng batch write
             const batch = writeBatch(db);
             cart.forEach(item => {
                 const productRef = doc(db, getCollectionPath('products'), item.productId);
@@ -434,18 +497,21 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
         }
     };
 
+    // Đặt lại form đơn hàng
     const resetForm = () => {
         setCart([]);
         setSelectedCustomer('');
         setShowForm(false);
     };
     
+    // Xử lý in hóa đơn
     const handlePrint = () => {
         window.print();
     };
 
     return (
         <div>
+            {/* CSS cho chức năng in hóa đơn */}
             <style>
                 {`
                     @media print {
@@ -468,6 +534,7 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
                     }
                 `}
             </style>
+            {/* Modal hóa đơn */}
             {invoice && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
                     <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl relative">
@@ -533,6 +600,7 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
                 </button>
             </div>
 
+            {/* Form tạo đơn hàng */}
             {showForm && (
                 <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow">
@@ -578,6 +646,7 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
                 </div>
             )}
 
+            {/* Bảng danh sách đơn hàng */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="w-full">
                     <thead className="bg-slate-50 border-b">
@@ -604,19 +673,32 @@ const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionP
     );
 };
 
+/**
+ * Component Quản lý Khách hàng.
+ * Cho phép thêm, chỉnh sửa và xem lịch sử đơn hàng của khách hàng.
+ */
 const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) => {
     const [showForm, setShowForm] = useState(false);
     const [editingCustomer, setEditingCustomer] = useState(null);
     const [formData, setFormData] = useState({ name: '', phone: '', address: '' });
-    const [selectedCustomer, setSelectedCustomer] = useState(null);
+    const [selectedCustomer, setSelectedCustomer] = useState(null); // Để hiển thị modal lịch sử đơn hàng
 
+    // Lọc đơn hàng theo khách hàng đã chọn
     const customerOrders = useMemo(() => {
         if (!selectedCustomer) return [];
         return orders.filter(o => o.customerId === selectedCustomer.id);
     }, [selectedCustomer, orders]);
 
+    // Tính tổng công nợ của khách hàng đã chọn
+    const totalCustomerDebt = useMemo(() => {
+        if (!selectedCustomer) return 0;
+        return customerOrders.reduce((sum, order) => sum + (order.total - (order.paidAmount || 0)), 0);
+    }, [selectedCustomer, customerOrders]);
+
+    // Xử lý thay đổi input của form
     const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
+    // Xử lý gửi form (thêm/cập nhật khách hàng)
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
@@ -631,12 +713,14 @@ const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) 
         }
     };
 
+    // Đặt lại form về trạng thái ban đầu
     const resetForm = () => {
         setShowForm(false);
         setEditingCustomer(null);
         setFormData({ name: '', phone: '', address: '' });
     };
 
+    // Xử lý khi người dùng muốn chỉnh sửa khách hàng
     const handleEdit = (customer) => {
         setEditingCustomer(customer);
         setFormData({ name: customer.name, phone: customer.phone || '', address: customer.address || '' });
@@ -645,10 +729,12 @@ const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) 
 
     return (
         <div>
+            {/* Modal lịch sử đơn hàng của khách hàng */}
             {selectedCustomer && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
                     <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-3xl">
                         <h3 className="font-bold text-xl mb-4">Lịch sử đơn hàng của {selectedCustomer.name}</h3>
+                        <p className="mb-4 text-lg font-semibold text-red-600">Tổng công nợ: {formatCurrency(totalCustomerDebt)}</p>
                         <div className="max-h-96 overflow-y-auto">
                             <table className="w-full">
                                 <thead className="bg-slate-50 border-b">
@@ -656,6 +742,8 @@ const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) 
                                         <th className="p-2 text-left">Mã ĐH</th>
                                         <th className="p-2 text-left">Ngày</th>
                                         <th className="p-2 text-right">Tổng tiền</th>
+                                        <th className="p-2 text-right">Đã thanh toán</th>
+                                        <th className="p-2 text-right">Còn nợ</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -664,6 +752,8 @@ const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) 
                                             <td className="p-2 font-mono text-sm">{o.id.substring(0,6)}</td>
                                             <td className="p-2">{new Date(o.createdAt).toLocaleDateString('vi-VN')}</td>
                                             <td className="p-2 text-right">{formatCurrency(o.total)}</td>
+                                            <td className="p-2 text-right">{formatCurrency(o.paidAmount || 0)}</td>
+                                            <td className="p-2 text-right font-semibold text-red-600">{formatCurrency(o.total - (o.paidAmount || 0))}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -682,6 +772,7 @@ const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) 
                 </button>
             </div>
 
+            {/* Form thêm/chỉnh sửa khách hàng */}
             {showForm && (
                 <div className="bg-white p-6 rounded-lg shadow mb-6">
                     <h3 className="font-bold text-lg mb-4">{editingCustomer ? 'Chỉnh sửa khách hàng' : 'Thêm khách hàng mới'}</h3>
@@ -697,6 +788,7 @@ const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) 
                 </div>
             )}
 
+            {/* Bảng danh sách khách hàng */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="w-full">
                     <thead className="bg-slate-50 border-b">
@@ -726,11 +818,17 @@ const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) 
     );
 };
 
+/**
+ * Component Quản lý Tài chính cá nhân.
+ * Cho phép ghi nhận các khoản thu chi và xem số dư tài khoản.
+ */
 const Finance = ({ transactions, addDocToFirestore }) => {
     const [formData, setFormData] = useState({ type: 'expense', description: '', amount: '', account: 'cash', date: new Date().toISOString().split('T')[0] });
 
+    // Xử lý thay đổi input của form
     const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
 
+    // Xử lý gửi form (thêm giao dịch)
     const handleSubmit = async (e) => {
         e.preventDefault();
         const data = {
@@ -745,6 +843,7 @@ const Finance = ({ transactions, addDocToFirestore }) => {
         }
     };
 
+    // Tính toán tổng thu, chi, số dư tiền mặt và ngân hàng
     const { income, expense, cash, bank } = useMemo(() => {
         let i = 0, e = 0, c = 0, b = 0;
         transactions.forEach(t => {
@@ -762,6 +861,7 @@ const Finance = ({ transactions, addDocToFirestore }) => {
     return (
         <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Tài chính cá nhân</h2>
+            {/* Các thẻ tổng quan tài chính */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div className="bg-white p-4 rounded-lg shadow text-center">
                     <h3 className="text-slate-500">Tiền mặt</h3>
@@ -771,11 +871,12 @@ const Finance = ({ transactions, addDocToFirestore }) => {
                     <h3 className="text-slate-500">Tài khoản</h3>
                     <p className="text-xl font-bold text-blue-600">{formatCurrency(bank)}</p>
                 </div>
-                 <div className="bg-white p-4 rounded-lg shadow text-center">
+                   <div className="bg-white p-4 rounded-lg shadow text-center">
                     <h3 className="text-slate-500">Tổng cộng</h3>
                     <p className="text-xl font-bold text-purple-600">{formatCurrency(cash + bank)}</p>
                 </div>
             </div>
+            {/* Form thêm giao dịch */}
             <div className="bg-white p-6 rounded-lg shadow mb-6">
                 <h3 className="font-bold text-lg mb-4">Thêm giao dịch</h3>
                 <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
@@ -794,6 +895,7 @@ const Finance = ({ transactions, addDocToFirestore }) => {
                     </div>
                 </form>
             </div>
+            {/* Bảng danh sách giao dịch */}
             <div className="bg-white rounded-lg shadow overflow-hidden">
                 <table className="w-full">
                     <thead className="bg-slate-50 border-b">
@@ -822,11 +924,16 @@ const Finance = ({ transactions, addDocToFirestore }) => {
     );
 };
 
+/**
+ * Component Báo cáo.
+ * Hiển thị báo cáo tài chính hàng tháng và công nợ phải thu, có tích hợp phân tích AI.
+ */
 const Reports = ({ orders, customers, transactions, products }) => {
     const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
     const [aiAnalysis, setAiAnalysis] = useState('');
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+    // Tính toán dữ liệu tài chính hàng tháng
     const monthlyData = useMemo(() => {
         const filteredOrders = orders.filter(o => o.createdAt.startsWith(month));
         const filteredTransactions = transactions.filter(t => t.date.startsWith(month));
@@ -846,6 +953,7 @@ const Reports = ({ orders, customers, transactions, products }) => {
         return { revenue, costOfGoods, grossProfit, income, expense };
     }, [month, orders, transactions, products]);
 
+    // Tính toán dữ liệu công nợ phải thu
     const debtData = useMemo(() => {
         const customerDebts = {};
         customers.forEach(c => {
@@ -861,9 +969,10 @@ const Reports = ({ orders, customers, transactions, products }) => {
         return Object.values(customerDebts).filter(c => c.debt > 0);
     }, [customers, orders]);
 
+    // Xử lý phân tích AI
     const handleAnalyze = async () => {
         setIsAnalyzing(true);
-        setAiAnalysis('');
+        setAiAnalysis(''); // Xóa phân tích cũ
         const summary = `
             Dữ liệu tài chính tháng ${month}:
             - Doanh thu bán hàng: ${formatCurrency(monthlyData.revenue)}
@@ -879,7 +988,7 @@ const Reports = ({ orders, customers, transactions, products }) => {
         try {
             const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
             const payload = { contents: chatHistory };
-            const apiKey = "";
+            const apiKey = ""; // API key sẽ được Canvas cung cấp tự động
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
             
             const response = await fetch(apiUrl, {
@@ -890,6 +999,7 @@ const Reports = ({ orders, customers, transactions, products }) => {
             const result = await response.json();
             
             if (result.candidates && result.candidates[0].content.parts[0].text) {
+                // Thay thế ký tự xuống dòng bằng <br /> để hiển thị đúng trong HTML
                 setAiAnalysis(result.candidates[0].content.parts[0].text.replace(/\n/g, '<br />'));
             } else {
                 setAiAnalysis("Không thể phân tích. Vui lòng thử lại.");
@@ -902,7 +1012,6 @@ const Reports = ({ orders, customers, transactions, products }) => {
         }
     };
 
-
     return (
         <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-6">Báo cáo</h2>
@@ -912,7 +1021,7 @@ const Reports = ({ orders, customers, transactions, products }) => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Financial Report */}
+                {/* Báo cáo tài chính */}
                 <div className="bg-white p-6 rounded-lg shadow">
                     <h3 className="font-bold text-lg mb-4">Báo cáo tài chính tháng {month}</h3>
                     <ul className="space-y-2">
@@ -923,10 +1032,12 @@ const Reports = ({ orders, customers, transactions, products }) => {
                         <li className="flex justify-between"><span>Chi phí khác:</span> <span className="font-semibold">{formatCurrency(monthlyData.expense)}</span></li>
                         <li className="flex justify-between border-t pt-2 font-bold text-blue-600"><span>Lợi nhuận ròng (ước tính):</span> <span>{formatCurrency(monthlyData.grossProfit + monthlyData.income - monthlyData.expense)}</span></li>
                     </ul>
+                    {/* Nút phân tích AI */}
                     <button onClick={handleAnalyze} disabled={isAnalyzing} className="mt-6 w-full bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center justify-center hover:bg-blue-600 disabled:bg-slate-400">
                         {isAnalyzing ? <Icon name="loading" className="w-5 h-5 mr-2 animate-spin" /> : <Icon name="ai" className="w-5 h-5 mr-2" />}
                         {isAnalyzing ? 'Đang phân tích...' : 'Phân tích & Lời khuyên từ AI'}
                     </button>
+                    {/* Kết quả phân tích AI */}
                     {aiAnalysis && (
                         <div className="mt-4 p-4 bg-slate-50 rounded-lg border">
                             <h4 className="font-bold mb-2">Phân tích từ AI:</h4>
@@ -935,7 +1046,7 @@ const Reports = ({ orders, customers, transactions, products }) => {
                     )}
                 </div>
 
-                {/* Debt Report */}
+                {/* Báo cáo công nợ phải thu */}
                 <div className="bg-white p-6 rounded-lg shadow">
                     <h3 className="font-bold text-lg mb-4">Báo cáo công nợ phải thu</h3>
                     <div className="max-h-96 overflow-y-auto">
@@ -963,7 +1074,7 @@ const Reports = ({ orders, customers, transactions, products }) => {
 };
 
 
-// --- AI Component ---
+// --- Component Thư ký AI (Chatbot) ---
 
 const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }) => {
     const [input, setInput] = useState('');
@@ -971,12 +1082,14 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
     const [isProcessing, setIsProcessing] = useState(false);
     const messagesEndRef = useRef(null);
 
+    // Cuộn xuống cuối tin nhắn
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     };
 
     useEffect(scrollToBottom, [messages]);
 
+    // Xử lý gửi tin nhắn đến AI
     const handleSendMessage = async () => {
         if (!input.trim() || isProcessing) return;
         const userMessage = { sender: 'user', text: input };
@@ -984,6 +1097,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
         setInput('');
         setIsProcessing(true);
 
+        // Tạo prompt cho AI để phân tích yêu cầu người dùng và trả về JSON
         const prompt = `
             You are an AI secretary for a business management app. Your task is to interpret the user's Vietnamese request and convert it into a structured JSON command.
             Respond ONLY with the JSON object. Do not add any explanation or conversational text.
@@ -1011,7 +1125,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
                 contents: chatHistory,
                 generationConfig: { responseMimeType: "application/json" }
             };
-            const apiKey = "";
+            const apiKey = ""; // API key sẽ được Canvas cung cấp tự động
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
             
             const response = await fetch(apiUrl, {
@@ -1022,8 +1136,8 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
             const result = await response.json();
             
             const jsonText = result.candidates[0].content.parts[0].text;
-            const data = JSON.parse(jsonText);
-            await processCommand(data);
+            const data = JSON.parse(jsonText); // Parse JSON từ phản hồi của AI
+            await processCommand(data); // Xử lý lệnh được tạo bởi AI
 
         } catch (error) {
             console.error("AI processing error:", error);
@@ -1033,6 +1147,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
         }
     };
 
+    // Xử lý các lệnh được tạo bởi AI
     const processCommand = async (data) => {
         let aiResponse = 'Đã hiểu. Đang xử lý...';
         try {
@@ -1042,6 +1157,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
                     aiResponse = `Đã thêm sản phẩm mới: ${data.payload.name}.`;
                     break;
                 case 'addStock': {
+                    // Tìm sản phẩm dựa trên tên (không phân biệt chữ hoa/thường)
                     const product = products.find(p => p.name.toLowerCase() === data.payload.productName.toLowerCase());
                     if (product) {
                         await setDocInFirestore('products', product.id, { stock: product.stock + data.payload.quantity });
@@ -1052,6 +1168,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
                     break;
                 }
                 case 'createOrder': {
+                    // Tìm khách hàng hoặc tạo mới nếu chưa tồn tại
                     let customer = customers.find(c => c.name.toLowerCase() === data.payload.customerName.toLowerCase());
                     if (!customer) {
                         const newCustomerRef = await addDocToFirestore('customers', { name: data.payload.customerName });
@@ -1063,6 +1180,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
                     let total = 0;
                     let validOrder = true;
                     
+                    // Kiểm tra và thêm các mặt hàng vào đơn hàng
                     for (const item of data.payload.items) {
                         const product = products.find(p => p.name.toLowerCase() === item.productName.toLowerCase());
                         if (product && product.stock >= item.quantity) {
@@ -1091,6 +1209,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
                         };
                         await addDocToFirestore('orders', orderData);
                         
+                        // Cập nhật tồn kho bằng batch write
                         const batch = writeBatch(db);
                         orderItems.forEach(item => {
                             const productRef = doc(db, getCollectionPath('products'), item.productId);
@@ -1112,16 +1231,28 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
                     aiResponse = `Đã ghi nhận một khoản ${data.payload.type === 'income' ? 'thu' : 'chi'} trị giá ${formatCurrency(data.payload.amount)}.`;
                     break;
                 case 'query':
-                    // This is a simple example. More complex queries would need more logic.
-                    if (data.payload.question.toLowerCase().includes("tồn kho")) {
-                         const productName = data.payload.question.split("tồn kho của")[1]?.trim() || data.payload.question.split("tồn kho")[1]?.trim();
-                         const product = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
-                         if (product) {
+                    // Ví dụ đơn giản cho truy vấn tồn kho
+                    if (data.payload.question.toLowerCase().includes("tồn kho của")) {
+                        const productName = data.payload.question.split("tồn kho của")[1]?.trim();
+                        const product = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
+                        if (product) {
                             aiResponse = `Tồn kho của ${product.name} là ${product.stock}.`;
-                         } else {
+                        } else {
                             aiResponse = `Không tìm thấy sản phẩm ${productName}.`;
-                         }
-                    } else {
+                        }
+                    } else if (data.payload.question.toLowerCase().includes("tồn kho")) {
+                        // Handle generic "tồn kho" query (e.g., list all products with low stock)
+                        const lowStockProducts = products.filter(p => p.stock < 10).map(p => `${p.name} (${p.stock})`);
+                        if (lowStockProducts.length > 0) {
+                            aiResponse = `Một số sản phẩm có tồn kho thấp: ${lowStockProducts.join(', ')}.`;
+                        } else {
+                            aiResponse = `Tất cả sản phẩm đều có tồn kho đủ.`;
+                        }
+                    } else if (data.payload.question.toLowerCase().includes("doanh thu")) {
+                        const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
+                        aiResponse = `Tổng doanh thu hiện tại là ${formatCurrency(totalRevenue)}.`;
+                    }
+                    else {
                         aiResponse = "Tôi chưa thể trả lời câu hỏi này.";
                     }
                     break;
@@ -1138,6 +1269,7 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
     return (
         <div className="border-t border-slate-200 bg-white">
             <div className="p-4">
+                {/* Khu vực hiển thị tin nhắn chat */}
                 <div className="h-40 overflow-y-auto p-2 bg-slate-50 rounded-lg mb-2">
                     {messages.map((msg, index) => (
                         <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -1146,16 +1278,18 @@ const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore
                             </div>
                         </div>
                     ))}
+                    {/* Hiển thị trạng thái đang xử lý của AI */}
                     {isProcessing && (
-                         <div className="flex justify-start">
-                            <div className="bg-slate-200 text-slate-800 p-2 px-3 rounded-lg mb-2 inline-flex items-center">
-                               <Icon name="loading" className="w-4 h-4 mr-2 animate-spin" />
-                               <span>Đang xử lý...</span>
+                            <div className="flex justify-start">
+                                <div className="bg-slate-200 text-slate-800 p-2 px-3 rounded-lg mb-2 inline-flex items-center">
+                                   <Icon name="loading" className="w-4 h-4 mr-2 animate-spin" />
+                                   <span>Đang xử lý...</span>
+                                </div>
                             </div>
-                        </div>
                     )}
-                    <div ref={messagesEndRef} />
+                    <div ref={messagesEndRef} /> {/* Dùng để cuộn xuống cuối */}
                 </div>
+                {/* Thanh nhập liệu và nút gửi */}
                 <div className="flex items-center gap-2">
                     <Icon name="ai" className="w-6 h-6 text-slate-500" />
                     <input
