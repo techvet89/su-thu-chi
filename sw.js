@@ -1,44 +1,44 @@
+// sw.js (Service Worker)
+// Đây là một Service Worker cơ bản để hỗ trợ PWA.
+// Bạn có thể tùy chỉnh để thêm caching tài nguyên, xử lý offline, v.v.
+
 const CACHE_NAME = 'so-thu-chi-cache-v1';
 const urlsToCache = [
   '/',
   '/index.html',
-  'https://cdn.tailwindcss.com/',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'
+  '/manifest.json',
+  // Thêm các tài nguyên tĩnh khác của bạn vào đây nếu có
+  // ví dụ: '/icon-192x192.png', '/icon-512x512.png'
 ];
 
-// Cài đặt Service Worker và cache các file ban đầu
-self.addEventListener('install', event => {
+self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => {
+      .then((cache) => {
         console.log('Opened cache');
         return cache.addAll(urlsToCache);
       })
   );
 });
 
-// Lấy dữ liệu từ cache nếu có, nếu không thì fetch từ mạng
-self.addEventListener('fetch', event => {
+self.addEventListener('fetch', (event) => {
   event.respondWith(
     caches.match(event.request)
-      .then(response => {
-        // Cache hit - return response
+      .then((response) => {
         if (response) {
           return response;
         }
         return fetch(event.request);
-      }
-    )
+      })
   );
 });
 
-// Xóa các cache cũ
-self.addEventListener('activate', event => {
+self.addEventListener('activate', (event) => {
   const cacheWhitelist = [CACHE_NAME];
   event.waitUntil(
-    caches.keys().then(cacheNames => {
+    caches.keys().then((cacheNames) => {
       return Promise.all(
-        cacheNames.map(cacheName => {
+        cacheNames.map((cacheName) => {
           if (cacheWhitelist.indexOf(cacheName) === -1) {
             return caches.delete(cacheName);
           }

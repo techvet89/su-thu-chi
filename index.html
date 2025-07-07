@@ -105,634 +105,650 @@
     <script type="text/babel">
         // Bao bọc toàn bộ mã React trong window.onload để đảm bảo tất cả các script đã tải xong
         window.onload = function() {
-            // Khởi tạo Firebase
-            let app, db, auth;
-            try {
-                // Sử dụng các hàm Firebase từ đối tượng toàn cục
-                app = firebase.initializeApp(firebaseConfig);
-                db = firebase.firestore.getFirestore(app);
-                auth = firebase.auth.getAuth(app);
-            } catch (e) {
-                console.error("Firebase initialization failed:", e);
-            }
+            // Hàm này sẽ cố gắng khởi tạo Firebase và render ứng dụng
+            const initializeAppAndRender = () => {
+                // Kiểm tra nếu đối tượng firebase chưa sẵn sàng
+                if (typeof firebase === 'undefined' || !firebase.initializeApp) {
+                    console.warn("Firebase not yet loaded, retrying initialization...");
+                    setTimeout(initializeAppAndRender, 100); // Thử lại sau 100ms
+                    return;
+                }
 
-            // Lấy cấu hình và app ID từ window
-            const firebaseConfig = window.firebaseConfig;
-            const appId = window.appId;
+                // Khởi tạo Firebase
+                let app, db, auth;
+                try {
+                    // Sử dụng các hàm Firebase từ đối tượng toàn cục
+                    app = firebase.initializeApp(firebaseConfig);
+                    db = firebase.firestore.getFirestore(app);
+                    auth = firebase.auth.getAuth(app);
+                } catch (e) {
+                    console.error("Firebase initialization failed:", e);
+                    // Hiển thị thông báo lỗi thân thiện với người dùng nếu khởi tạo thất bại
+                    ReactDOM.createRoot(document.getElementById('root')).render(
+                        <div className="flex items-center justify-center h-screen bg-slate-100">
+                            <div>Lỗi: Không thể khởi tạo Firebase. Vui lòng kiểm tra cấu hình hoặc kết nối mạng.</div>
+                        </div>
+                    );
+                    return; // Dừng thực thi nếu Firebase init thất bại
+                }
 
-            // Đăng ký các thành phần của Chart.js (Sửa để dùng Chart.register với các thành phần từ Chart object)
-            // Chart.js UMD bundle xuất ra đối tượng 'Chart' toàn cục, các thành phần con truy cập qua Chart.CategoryScale, v.v.
-            Chart.register(Chart.CategoryScale, Chart.LinearScale, Chart.BarElement, Chart.Title, Chart.Tooltip, Chart.Legend, Chart.ArcElement);
+                // Lấy cấu hình và app ID từ window
+                const firebaseConfig = window.firebaseConfig;
+                const appId = window.appId;
+
+                // Đăng ký các thành phần của Chart.js (Sửa để dùng Chart.register với các thành phần từ Chart object)
+                // Chart.js UMD bundle xuất ra đối tượng 'Chart' toàn cục, các thành phần con truy cập qua Chart.CategoryScale, v.v.
+                Chart.register(Chart.CategoryScale, Chart.LinearScale, Chart.BarElement, Chart.Title, Chart.Tooltip, Chart.Legend, Chart.ArcElement);
 
 
-            // --- Hàm trợ giúp & Biểu tượng ---
+                // --- Hàm trợ giúp & Biểu tượng ---
 
-            /**
-             * Định dạng số tiền thành tiền tệ Việt Nam Đồng (VND).
-             * @param {number} amount - Số tiền cần định dạng.
-             * @returns {string} Chuỗi số tiền đã định dạng.
-             */
-            const formatCurrency = (amount) => {
-                if (typeof amount !== 'number') return '0 ₫';
-                return amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
-            };
-
-            /**
-             * Component biểu tượng SVG.
-             * @param {object} props - Các thuộc tính của component.
-             * @param {string} props.name - Tên của biểu tượng (ví dụ: 'dashboard', 'plus').
-             * @param {string} [props.className] - Các lớp CSS bổ sung.
-             * @returns {JSX.Element} Biểu tượng SVG.
-             */
-            const Icon = ({ name, className }) => {
-                const icons = {
-                    dashboard: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h12A2.25 2.25 0 0020.25 14.25V3.75M3.75 3h16.5M3.75 3v1.5M16.5 3v1.5m-12.75 3h11.25" />,
-                    products: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />,
-                    orders: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
-                    customers: <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.101c1.203-1.824 1.203-4.125 0-5.949a4.125 4.125 0 00-7.533-2.493M3.375 21v-.003c0-1.113.285-2.16.786-3.07M3.375 21v.106A12.318 12.318 0 008.624 21c2.331 0 4.512-.645 6.374-1.766l.001-.101c-1.203-1.824-1.203-4.125 0-5.949" />,
-                    finance: <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414-.336.75-.75.75h-.75m0-1.5h.375c.621 0 1.125.504 1.125 1.125v.375m-18 0h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6z" />,
-                    reports: <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h15.75c.621 0 1.125.504 1.125 1.125v6.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 19.875v-6.75zM3 8.625c0-.621.504-1.125 1.125-1.125h15.75c.621 0 1.125.504 1.125 1.125v.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 9.375v-.75zM3.75 3a1.125 1.125 0 00-1.125 1.125v.75c0 .621.504 1.125 1.125 1.125h16.5c.621 0 1.125-.504 1.125-1.125v-.75A1.125 1.125 0 0020.25 3H3.75z" />,
-                    ai: <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 16.5V21m3.75-18v1.5M19.5 8.25h-1.5m-16.5 0h1.5m15 3.75h-1.5m-15 0h1.5m15 3.75h-1.5m-3.75 3.75v1.5m-3-19.5v1.5" />,
-                    plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
-                    send: <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />,
-                    loading: <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" />,
+                /**
+                 * Định dạng số tiền thành tiền tệ Việt Nam Đồng (VND).
+                 * @param {number} amount - Số tiền cần định dạng.
+                 * @returns {string} Chuỗi số tiền đã định dạng.
+                 */
+                const formatCurrency = (amount) => {
+                    if (typeof amount !== 'number') return '0 ₫';
+                    return amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
                 };
-                return <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className || "w-6 h-6"}>{icons[name]}</svg>;
-            };
 
-            // --- Component chính của ứng dụng ---
-            function App() { // Đã bỏ 'export default'
-                const [page, setPage] = React.useState('dashboard');
-                const [user, setUser] = React.useState(null);
-                const [loading, setLoading] = React.useState(true);
+                /**
+                 * Component biểu tượng SVG.
+                 * @param {object} props - Các thuộc tính của component.
+                 * @param {string} props.name - Tên của biểu tượng (ví dụ: 'dashboard', 'plus').
+                 * @param {string} [props.className] - Các lớp CSS bổ sung.
+                 * @returns {JSX.Element} Biểu tượng SVG.
+                 */
+                const Icon = ({ name, className }) => {
+                    const icons = {
+                        dashboard: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h12A2.25 2.25 0 0020.25 14.25V3.75M3.75 3h16.5M3.75 3v1.5M16.5 3v1.5m-12.75 3h11.25" />,
+                        products: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />,
+                        orders: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
+                        customers: <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.101c1.203-1.824 1.203-4.125 0-5.949a4.125 4.125 0 00-7.533-2.493M3.375 21v-.003c0-1.113.285-2.16.786-3.07M3.375 21v.106A12.318 12.318 0 008.624 21c2.331 0 4.512-.645 6.374-1.766l-.001-.101c-1.203-1.824-1.203-4.125 0-5.949" />,
+                        finance: <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414-.336.75-.75.75h-.75m0-1.5h.375c.621 0 1.125.504 1.125 1.125v.375m-18 0h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6z" />,
+                        reports: <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h15.75c.621 0 1.125.504 1.125 1.125v6.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 19.875v-6.75zM3 8.625c0-.621.504-1.125 1.125-1.125h15.75c.621 0 1.125.504 1.125 1.125v.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 9.375v-.75zM3.75 3a1.125 1.125 0 00-1.125 1.125v.75c0 .621.504 1.125 1.125 1.125h16.5c.621 0 1.125-.504 1.125-1.125v-.75A1.125 1.125 0 0020.25 3H3.75z" />,
+                        ai: <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 16.5V21m3.75-18v1.5M19.5 8.25h-1.5m-16.5 0h1.5m15 3.75h-1.5m-15 0h1.5m15 3.75h-1.5m-3.75 3.75v1.5m-3-19.5v1.5" />,
+                        plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
+                        send: <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />,
+                        loading: <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" />,
+                    };
+                    return <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className || "w-6 h-6"}>{icons[name]}</svg>;
+                };
 
-                // Trạng thái dữ liệu
-                const [products, setProducts] = React.useState([]);
-                const [customers, setCustomers] = React.useState([]);
-                const [orders, setOrders] = React.useState([]);
-                const [transactions, setTransactions] = React.useState([]);
+                // --- Component chính của ứng dụng ---
+                function App() { // Đã bỏ 'export default'
+                    const [page, setPage] = React.useState('dashboard');
+                    const [user, setUser] = React.useState(null);
+                    const [loading, setLoading] = React.useState(true);
 
-                // Đường dẫn Firestore
-                const getCollectionPath = (collectionName) => user ? `/artifacts/${appId}/users/${user.uid}/${collectionName}` : null;
-                
-                // Khởi tạo Firebase và xác thực người dùng
-                React.useEffect(() => {
-                    if (!auth) {
-                        setLoading(false);
-                        return;
-                    }
-                    const unsubscribe = firebase.auth.onAuthStateChanged(auth, async (currentUser) => {
-                        if (currentUser) {
-                            setUser(currentUser);
+                    // Trạng thái dữ liệu
+                    const [products, setProducts] = React.useState([]);
+                    const [customers, setCustomers] = React.useState([]);
+                    const [orders, setOrders] = React.useState([]);
+                    const [transactions, setTransactions] = React.useState([]);
+
+                    // Đường dẫn Firestore
+                    const getCollectionPath = (collectionName) => user ? `/artifacts/${appId}/users/${user.uid}/${collectionName}` : null;
+                    
+                    // Khởi tạo Firebase và xác thực người dùng
+                    React.useEffect(() => {
+                        if (!auth) {
                             setLoading(false);
-                        } else {
-                            try {
-                                // Khi nhúng vào HTML, __initial_auth_token sẽ không tồn tại.
-                                // Chúng ta sẽ luôn thử đăng nhập ẩn danh nếu chưa có người dùng.
-                                await firebase.auth.signInAnonymously(auth);
-                            } catch (error) {
-                                console.error("Error signing in:", error);
+                            return;
+                        }
+                        const unsubscribe = firebase.auth.onAuthStateChanged(auth, async (currentUser) => {
+                            if (currentUser) {
+                                setUser(currentUser);
                                 setLoading(false);
+                            } else {
+                                try {
+                                    // Khi nhúng vào HTML, __initial_auth_token sẽ không tồn tại.
+                                    // Chúng ta sẽ luôn thử đăng nhập ẩn danh nếu chưa có người dùng.
+                                    await firebase.auth.signInAnonymously(auth);
+                                } catch (error) {
+                                    console.error("Error signing in:", error);
+                                    setLoading(false);
+                                }
+                            }
+                        });
+                        return () => unsubscribe();
+                    }, []);
+
+                    // Lắng nghe thay đổi dữ liệu từ Firestore
+                    React.useEffect(() => {
+                        if (!user) return;
+
+                        const unsubscribers = [];
+                        const collections = {
+                            products: setProducts,
+                            customers: setCustomers,
+                            orders: setOrders,
+                            transactions: setTransactions,
+                        };
+
+                        for (const [name, setter] of Object.entries(collections)) {
+                            const path = getCollectionPath(name);
+                            if(path){
+                                const q = firebase.firestore.query(firebase.firestore.collection(db, path));
+                                const unsubscribe = firebase.firestore.onSnapshot(q, (querySnapshot) => {
+                                    const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                                    setter(items);
+                                });
+                                unsubscribers.push(unsubscribe);
                             }
                         }
-                    });
-                    return () => unsubscribe();
-                }, []);
 
-                // Lắng nghe thay đổi dữ liệu từ Firestore
-                React.useEffect(() => {
-                    if (!user) return;
+                        return () => unsubscribers.forEach(unsub => unsub());
+                    }, [user]);
 
-                    const unsubscribers = [];
-                    const collections = {
-                        products: setProducts,
-                        customers: setCustomers,
-                        orders: setOrders,
-                        transactions: setTransactions,
+                    /**
+                     * Thêm tài liệu vào Firestore.
+                     * @param {string} collectionName - Tên bộ sưu tập.
+                     * @param {object} data - Dữ liệu cần thêm.
+                     * @returns {Promise<DocumentReference>} Tham chiếu đến tài liệu mới.
+                     */
+                    const addDocToFirestore = async (collectionName, data) => {
+                        const path = getCollectionPath(collectionName);
+                        if (!path) throw new Error("User not authenticated");
+                        return await firebase.firestore.addDoc(firebase.firestore.collection(db, path), data);
                     };
 
-                    for (const [name, setter] of Object.entries(collections)) {
-                        const path = getCollectionPath(name);
-                        if(path){
-                            const q = firebase.firestore.query(firebase.firestore.collection(db, path));
-                            const unsubscribe = firebase.firestore.onSnapshot(q, (querySnapshot) => {
-                                const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                setter(items);
-                            });
-                            unsubscribers.push(unsubscribe);
-                        }
+                    /**
+                     * Cập nhật hoặc tạo tài liệu trong Firestore.
+                     * @param {string} collectionName - Tên bộ sưu tập.
+                     * @param {string} docId - ID của tài liệu.
+                     * @param {object} data - Dữ liệu cần cập nhật/tạo.
+                     * @returns {Promise<void>}
+                     */
+                    const setDocInFirestore = async (collectionName, docId, data) => {
+                        const path = getCollectionPath(collectionName);
+                        if (!path) throw new Error("User not authenticated");
+                        await firebase.firestore.setDoc(firebase.firestore.doc(db, path, docId), data, { merge: true });
+                    };
+
+                    // Hiển thị trạng thái tải ứng dụng
+                    if (loading) {
+                        return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Đang tải ứng dụng...</div></div>;
+                    }
+                    
+                    // Hiển thị thông báo nếu không thể xác thực người dùng
+                    if (!user) {
+                        return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Không thể xác thực người dùng. Vui lòng tải lại trang.</div></div>;
                     }
 
-                    return () => unsubscribers.forEach(unsub => unsub());
-                }, [user]);
-
-                /**
-                 * Thêm tài liệu vào Firestore.
-                 * @param {string} collectionName - Tên bộ sưu tập.
-                 * @param {object} data - Dữ liệu cần thêm.
-                 * @returns {Promise<DocumentReference>} Tham chiếu đến tài liệu mới.
-                 */
-                const addDocToFirestore = async (collectionName, data) => {
-                    const path = getCollectionPath(collectionName);
-                    if (!path) throw new Error("User not authenticated");
-                    return await firebase.firestore.addDoc(firebase.firestore.collection(db, path), data);
-                };
-
-                /**
-                 * Cập nhật hoặc tạo tài liệu trong Firestore.
-                 * @param {string} collectionName - Tên bộ sưu tập.
-                 * @param {string} docId - ID của tài liệu.
-                 * @param {object} data - Dữ liệu cần cập nhật/tạo.
-                 * @returns {Promise<void>}
-                 */
-                const setDocInFirestore = async (collectionName, docId, data) => {
-                    const path = getCollectionPath(collectionName);
-                    if (!path) throw new Error("User not authenticated");
-                    await firebase.firestore.setDoc(firebase.firestore.doc(db, path, docId), data, { merge: true });
-                };
-
-                // Hiển thị trạng thái tải ứng dụng
-                if (loading) {
-                    return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Đang tải ứng dụng...</div></div>;
-                }
-                
-                // Hiển thị thông báo nếu không thể xác thực người dùng
-                if (!user) {
-                    return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Không thể xác thực người dùng. Vui lòng tải lại trang.</div></div>;
-                }
-
-                // Render trang hiện tại dựa trên state 'page'
-                const renderPage = () => {
-                    const props = { products, customers, orders, transactions, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user };
-                    switch (page) {
-                        case 'dashboard': return <Dashboard {...props} />;
-                        case 'products': return <Products {...props} />;
-                        case 'orders': return <Orders {...props} />;
-                        case 'customers': return <Customers {...props} />;
-                        case 'finance': return <Finance {...props} />;
-                        case 'reports': return <Reports {...props} />;
-                        default: return <Dashboard {...props} />;
-                    }
-                };
-
-                // Các mục điều hướng
-                const navItems = [
-                    { id: 'dashboard', name: 'Bảng điều khiển', icon: 'dashboard' },
-                    { id: 'products', name: 'Sản phẩm', icon: 'products' },
-                    { id: 'orders', name: 'Đơn hàng', icon: 'orders' },
-                    { id: 'customers', name: 'Khách hàng', icon: 'customers' },
-                    { id: 'finance', name: 'Tài chính', icon: 'finance' },
-                    { id: 'reports', name: 'Báo cáo', icon: 'reports' },
-                ];
-
-                return (
-                    <div className="flex h-screen bg-slate-100 font-sans">
-                        {/* Thanh điều hướng bên trái */}
-                        <nav className="w-64 bg-white border-r border-slate-200 flex flex-col">
-                            <div className="p-4 border-b border-slate-200">
-                                <h1 className="text-xl font-bold text-slate-800">Ngô Văn Đô</h1>
-                                <p className="text-xs text-slate-500">Tài chính & Bán hàng</p>
-                            </div>
-                            <ul className="flex-1 p-2">
-                                {navItems.map(item => (
-                                    <li key={item.id}>
-                                        <a href="#" onClick={(e) => { e.preventDefault(); setPage(item.id); }}
-                                           className={`flex items-center p-3 my-1 rounded-lg transition-colors ${page === item.id ? 'bg-blue-500 text-white' : 'text-slate-700 hover:bg-slate-200'}`}>
-                                            <Icon name={item.icon} className="w-5 h-5 mr-3" />
-                                            <span>{item.name}</span>
-                                        </a>
-                                    </li>
-                                ))}
-                            </ul>
-                            <div className="p-2 border-t border-slate-200">
-                                <p className="text-xs text-slate-400 truncate px-2" title={`User ID: ${user.uid}`}>User ID: {user.uid}</p>
-                            </div>
-                        </nav>
-                        {/* Nội dung chính */}
-                        <main className="flex-1 flex flex-col overflow-hidden">
-                            <div className="flex-1 p-6 overflow-y-auto">
-                                {renderPage()}
-                            </div>
-                            {/* Component thư ký AI */}
-                            <AiSecretary {...{ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }} />
-                        </main>
-                    </div>
-                );
-            }
-
-            // --- Các Component Trang ---
-
-            /**
-             * Component Bảng điều khiển (Dashboard).
-             * Hiển thị tổng quan về các số liệu kinh doanh.
-             */
-            const Dashboard = ({ products, orders, transactions, customers }) => {
-                // Tính toán tổng giá trị tồn kho
-                const totalInventoryValue = React.useMemo(() => products.reduce((sum, p) => sum + (p.stock || 0) * (p.purchasePrice || 0), 0), [products]);
-                // Tính toán tổng doanh thu
-                const totalRevenue = React.useMemo(() => orders.reduce((sum, o) => sum + (o.total || 0), 0), [orders]);
-                
-                // Tính toán tổng thu, chi, số dư tiền mặt và ngân hàng
-                const { totalIncome, totalExpense, cashBalance, bankBalance } = React.useMemo(() => {
-                    let income = 0, expense = 0, cash = 0, bank = 0;
-                    transactions.forEach(t => {
-                        if (t.type === 'income') {
-                            income += t.amount;
-                            if (t.account === 'cash') cash += t.amount;
-                            else bank += t.amount;
-                        } else {
-                            expense += t.amount;
-                            if (t.account === 'cash') cash -= t.amount;
-                            else bank -= t.amount;
+                    // Render trang hiện tại dựa trên state 'page'
+                    const renderPage = () => {
+                        const props = { products, customers, orders, transactions, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user };
+                        switch (page) {
+                            case 'dashboard': return <Dashboard {...props} />;
+                            case 'products': return <Products {...props} />;
+                            case 'orders': return <Orders {...props} />;
+                            case 'customers': return <Customers {...props} />;
+                            case 'finance': return <Finance {...props} />;
+                            case 'reports': return <Reports {...props} />;
+                            default: return <Dashboard {...props} />;
                         }
-                    });
-                    return { totalIncome: income, totalExpense: expense, cashBalance: cash, bankBalance: bank };
-                }, [transactions]);
-                
-                // Tính toán tổng công nợ phải thu
-                const totalDebt = React.useMemo(() => {
-                    const customerDebts = {};
-                    customers.forEach(c => customerDebts[c.id] = 0);
-                    
-                    orders.forEach(order => {
-                        if (order.customerId && customerDebts.hasOwnProperty(order.customerId)) {
-                            const paidAmount = order.paidAmount || 0;
-                            customerDebts[order.customerId] += order.total - paidAmount;
-                        }
-                    });
-                    
-                    return Object.values(customerDebts).reduce((sum, debt) => sum + debt, 0);
-                }, [orders, customers]);
+                    };
 
-                // Dữ liệu thống kê hiển thị trên Dashboard
-                const stats = [
-                    { title: 'Tổng giá trị kho', value: formatCurrency(totalInventoryValue), color: 'bg-blue-500' },
-                    { title: 'Tổng doanh thu', value: formatCurrency(totalRevenue), color: 'bg-green-500' },
-                    { title: 'Công nợ phải thu', value: formatCurrency(totalDebt), color: 'bg-orange-500' },
-                    { title: 'Tổng tài sản', value: formatCurrency(cashBalance + bankBalance), color: 'bg-purple-500' },
-                ];
+                    // Các mục điều hướng
+                    const navItems = [
+                        { id: 'dashboard', name: 'Bảng điều khiển', icon: 'dashboard' },
+                        { id: 'products', name: 'Sản phẩm', icon: 'products' },
+                        { id: 'orders', name: 'Đơn hàng', icon: 'orders' },
+                        { id: 'customers', name: 'Khách hàng', icon: 'customers' },
+                        { id: 'finance', name: 'Tài chính', icon: 'finance' },
+                        { id: 'reports', name: 'Báo cáo', icon: 'reports' },
+                    ];
 
-                return (
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-6">Bảng điều khiển</h2>
-                        {/* Các thẻ thống kê */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                            {stats.map(stat => (
-                                <div key={stat.title} className="bg-white p-6 rounded-lg shadow">
-                                    <h3 className="text-sm font-medium">{stat.title}</h3>
-                                    <p className="text-2xl font-bold text-slate-800 mt-2">{stat.value}</p>
+                    return (
+                        <div className="flex h-screen bg-slate-100 font-sans">
+                            {/* Thanh điều hướng bên trái */}
+                            <nav className="w-64 bg-white border-r border-slate-200 flex flex-col">
+                                <div className="p-4 border-b border-slate-200">
+                                    <h1 className="text-xl font-bold text-slate-800">Ngô Văn Đô</h1>
+                                    <p className="text-xs text-slate-500">Tài chính & Bán hàng</p>
                                 </div>
-                            ))}
-                        </div>
-                        {/* Biểu đồ Thu vs Chi và Cơ cấu tài sản */}
-                        <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <div className="bg-white p-6 rounded-lg shadow">
-                                <h3 className="font-bold text-slate-800 mb-4">Thu vs Chi</h3>
-                                <Bar data={{
-                                    labels: ['Tổng'],
-                                    datasets: [
-                                        { label: 'Thu', data: [totalIncome], backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                                        { label: 'Chi', data: [totalExpense], backgroundColor: 'rgba(239, 68, 68, 0.7)' }
-                                    ]
-                                }} options={{ responsive: true }} />
-                            </div>
-                            <div className="bg-white p-6 rounded-lg shadow">
-                                <h3 className="font-bold text-slate-800 mb-4">Cơ cấu tài sản</h3>
-                                <Pie data={{
-                                    labels: ['Tiền mặt', 'Tài khoản ngân hàng'],
-                                    datasets: [{
-                                        data: [cashBalance, bankBalance],
-                                        backgroundColor: ['rgba(22, 163, 74, 0.7)', 'rgba(37, 99, 235, 0.7)'],
-                                    }]
-                                }} options={{ responsive: true }} />
-                            </div>
-                        </div>
-                    </div>
-                );
-            };
-
-            /**
-             * Component Quản lý Sản phẩm.
-             * Cho phép thêm, chỉnh sửa và xem danh sách sản phẩm.
-             */
-            const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
-                const [showForm, setShowForm] = React.useState(false);
-                const [editingProduct, setEditingProduct] = React.useState(null);
-                const [formData, setFormData] = React.useState({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
-
-                // Xử lý thay đổi input của form
-                const handleInputChange = (e) => {
-                    const { name, value } = e.target;
-                    setFormData(prev => ({ ...prev, [name]: value }));
-                };
-
-                // Xử lý gửi form (thêm/cập nhật sản phẩm)
-                const handleSubmit = async (e) => {
-                    e.preventDefault();
-                    const data = {
-                        name: formData.name,
-                        purchasePrice: parseFloat(formData.purchasePrice) || 0,
-                        sellingPrice: parseFloat(formData.sellingPrice) || 0,
-                        stock: parseInt(formData.stock, 10) || 0,
-                    };
-                    try {
-                        if (editingProduct) {
-                            await setDocInFirestore('products', editingProduct.id, data);
-                        } else {
-                            await addDocToFirestore('products', data);
-                        }
-                        resetForm();
-                    } catch (error) {
-                        console.error("Error saving product:", error);
-                    }
-                };
-
-                // Đặt lại form về trạng thái ban đầu
-                const resetForm = () => {
-                    setShowForm(false);
-                    setEditingProduct(null);
-                    setFormData({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
-                };
-
-                // Xử lý khi người dùng muốn chỉnh sửa sản phẩm
-                const handleEdit = (product) => {
-                    setEditingProduct(product);
-                    setFormData({
-                        name: product.name,
-                        purchasePrice: product.purchasePrice,
-                        sellingPrice: product.sellingPrice,
-                        stock: product.stock,
-                    });
-                    setShowForm(true);
-                };
-
-                return (
-                    <div>
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-bold text-slate-800">Quản lý Sản phẩm</h2>
-                            <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
-                                <Icon name="plus" className="w-5 h-5 mr-2" /> Thêm sản phẩm
-                            </button>
-                        </div>
-
-                        {/* Form thêm/chỉnh sửa sản phẩm */}
-                        {showForm && (
-                            <div className="bg-white p-6 rounded-lg shadow mb-6">
-                                <h3 className="font-bold text-lg mb-4">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
-                                <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Tên sản phẩm" className="p-2 border rounded" required />
-                                    <input type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleInputChange} placeholder="Giá nhập" className="p-2 border rounded" />
-                                    <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="Giá bán" className="p-2 border rounded" required />
-                                    <input type="number" name="stock" value={formData.stock} onChange={handleInputChange} placeholder="Tồn kho" className="p-2 border rounded" />
-                                    <div className="md:col-span-2 flex justify-end gap-2">
-                                        <button type="button" onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
-                                        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg">{editingProduct ? 'Lưu thay đổi' : 'Thêm'}</button>
-                                    </div>
-                                </form>
-                            </div>
-                        )}
-
-                        {/* Bảng danh sách sản phẩm */}
-                        <div className="bg-white rounded-lg shadow overflow-hidden">
-                            <table className="w-full">
-                                <thead className="bg-slate-50 border-b">
-                                    <tr>
-                                        <th className="p-3 text-left text-sm font-semibold text-slate-600">Tên sản phẩm</th>
-                                        <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá nhập</th>
-                                        <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá bán</th>
-                                        <th className="p-3 text-left text-sm font-semibold text-slate-600">Tồn kho</th>
-                                        <th className="p-3 text-left text-sm font-semibold text-slate-600">Hành động</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {products.map(p => (
-                                        <tr key={p.id} className="border-b hover:bg-slate-50">
-                                            <td className="p-3">{p.name}</td>
-                                            <td className="p-3">{formatCurrency(p.purchasePrice)}</td>
-                                            <td className="p-3">{formatCurrency(p.sellingPrice)}</td>
-                                            <td className="p-3">{p.stock}</td>
-                                            <td className="p-3">
-                                                <button onClick={() => handleEdit(p)} className="text-blue-500 hover:underline">Sửa</button>
-                                            </td>
-                                        </tr>
+                                <ul className="flex-1 p-2">
+                                    {navItems.map(item => (
+                                        <li key={item.id}>
+                                            <a href="#" onClick={(e) => { e.preventDefault(); setPage(item.id); }}
+                                               className={`flex items-center p-3 my-1 rounded-lg transition-colors ${page === item.id ? 'bg-blue-500 text-white' : 'text-slate-700 hover:bg-slate-200'}`}>
+                                                <Icon name={item.icon} className="w-5 h-5 mr-3" />
+                                                <span>{item.name}</span>
+                                            </a>
+                                        </li>
                                     ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            };
-
-            /**
-             * Component Quản lý Đơn hàng.
-             * Cho phép tạo đơn hàng mới và xem danh sách các đơn hàng đã tạo.
-             */
-            const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionPath, db }) => {
-                const [showForm, setShowForm] = React.useState(false);
-                const [cart, setCart] = React.useState([]);
-                const [selectedCustomer, setSelectedCustomer] = React.useState('');
-                const [invoice, setInvoice] = React.useState(null);
-
-                // Thêm sản phẩm vào giỏ hàng
-                const handleAddToCart = (product) => {
-                    const existing = cart.find(item => item.productId === product.id);
-                    if (existing) {
-                        if (existing.quantity < product.stock) {
-                            setCart(cart.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item));
-                        }
-                    } else {
-                        if (product.stock > 0) {
-                            setCart([...cart, { productId: product.id, name: product.name, price: product.sellingPrice, quantity: 1, maxStock: product.stock }]);
-                        }
-                    }
-                };
-
-                // Cập nhật số lượng sản phẩm trong giỏ hàng
-                const updateQuantity = (productId, quantity) => {
-                    const product = products.find(p => p.id === productId);
-                    if (quantity > 0 && quantity <= product.stock) {
-                        setCart(cart.map(item => item.productId === productId ? { ...item, quantity } : item));
-                    }
-                };
-                
-                // Xóa sản phẩm khỏi giỏ hàng
-                const removeFromCart = (productId) => {
-                    setCart(cart.filter(item => item.productId !== productId));
-                };
-
-                // Tính tổng giá trị đơn hàng
-                const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-                // Xử lý khi gửi đơn hàng
-                const handleSubmitOrder = async () => {
-                    if (cart.length === 0 || !selectedCustomer) {
-                        console.warn("Vui lòng chọn sản phẩm và khách hàng.");
-                        return;
-                    }
-
-                    const orderData = {
-                        customerId: selectedCustomer,
-                        customerName: customers.find(c => c.id === selectedCustomer)?.name || 'Khách lẻ',
-                        items: cart.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity })),
-                        total: total,
-                        createdAt: new Date().toISOString(),
-                        paidAmount: 0, // Mặc định số tiền đã thanh toán
-                    };
-
-                    try {
-                        const orderRef = await addDocToFirestore('orders', orderData);
-
-                        // Cập nhật tồn kho sản phẩm bằng batch write
-                        const batch = firebase.firestore.writeBatch(db);
-                        cart.forEach(item => {
-                            const productRef = firebase.firestore.doc(db, getCollectionPath('products'), item.productId);
-                            const product = products.find(p => p.id === item.productId);
-                            batch.update(productRef, { stock: product.stock - item.quantity });
-                        });
-                        await batch.commit();
-                        
-                        setInvoice({ ...orderData, id: orderRef.id });
-                        resetForm();
-                    } catch (error) {
-                        console.error("Error creating order:", error);
-                    }
-                };
-
-                // Đặt lại form đơn hàng
-                const resetForm = () => {
-                    setCart([]);
-                    setSelectedCustomer('');
-                    setShowForm(false);
-                };
-                
-                // Xử lý in hóa đơn
-                const handlePrint = () => {
-                    window.print();
-                };
-
-                return (
-                    <div>
-                        {/* Modal hóa đơn */}
-                        {invoice && (
-                            <div className="fixed inset-0 bg-black bg-opacity50 flex justify-center items-center z-50 p-4">
-                                <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl relative">
-                                    <div className="invoice-print-area">
-                                        <h2 className="text-2xl font-bold mb-4 text-slate-800">Hóa đơn #{invoice.id.substring(0, 6).toUpperCase()}</h2>
-                                        <div className="grid grid-cols-2 gap-4 mb-6">
-                                            <div>
-                                                <h3 className="font-bold text-slate-600">Cửa hàng:</h3>
-                                                <p>Ngô Văn Đô</p>
-                                                <p>123 Đường ABC, Quận 1, TP. HCM</p>
-                                            </div>
-                                            <div className="text-right">
-                                                <h3 className="font-bold text-slate-600">Khách hàng:</h3>
-                                                <p>{invoice.customerName}</p>
-                                            </div>
-                                        </div>
-                                        <p className="mb-4"><strong>Ngày tạo:</strong> {new Date(invoice.createdAt).toLocaleString('vi-VN')}</p>
-                                        <table className="w-full text-left">
-                                           <thead className="bg-slate-100">
-                                                <tr>
-                                                    <th className="p-2">Sản phẩm</th>
-                                                    <th className="p-2 text-right">Số lượng</th>
-                                                    <th className="p-2 text-right">Đơn giá</th>
-                                                    <th className="p-2 text-right">Thành tiền</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {invoice.items.map(item => (
-                                                    <tr key={item.productId} className="border-b">
-                                                        <td className="p-2">{item.name}</td>
-                                                        <td className="p-2 text-right">{item.quantity}</td>
-                                                        <td className="p-2 text-right">{formatCurrency(item.price)}</td>
-                                                        <td className="p-2 text-right">{formatCurrency(item.price * item.quantity)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                            <tfoot>
-                                                <tr>
-                                                    <td colSpan="3" className="text-right font-bold p-2 border-t-2 border-slate-600">Tổng cộng:</td>
-                                                    <td className="text-right font-bold p-2 border-t-2 border-slate-600">{formatCurrency(invoice.total)}</td>
-                                                </tr>
-                                            </tfoot>
-                                        </table>
-                                         <div className="text-center mt-8 text-sm text-slate-500">
-                                            <p>Cảm ơn quý khách đã mua hàng!</p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right mt-8 no-print">
-                                        <button onClick={handlePrint} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center inline-flex mr-2">
-                                            <Icon name="print" className="w-5 h-5 mr-2"/>
-                                            In hóa đơn
-                                        </button>
-                                        <button onClick={() => setInvoice(null)} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">Đóng</button>
-                                    </div>
+                                </ul>
+                                <div className="p-2 border-t border-slate-200">
+                                    <p className="text-xs text-slate-400 truncate px-2" title={`User ID: ${user.uid}`}>User ID: {user.uid}</p>
                                 </div>
-                            </div>
-                        )}
-                        
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-bold text-slate-800">Quản lý Đơn hàng</h2>
-                            <button onClick={() => setShowForm(true)} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
-                                <Icon name="plus" className="w-5 h-5 mr-2" /> Lên đơn hàng
-                            </button>
+                            </nav>
+                            {/* Nội dung chính */}
+                            <main className="flex-1 flex flex-col overflow-hidden">
+                                <div className="flex-1 p-6 overflow-y-auto">
+                                    {renderPage()}
+                                </div>
+                                {/* Component thư ký AI */}
+                                <AiSecretary {...{ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }} />
+                            </main>
                         </div>
+                    );
+                }
 
-                        {/* Form tạo đơn hàng */}
-                        {showForm && (
-                            <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow">
-                                     <h3 className="font-bold text-lg mb-4">Chọn sản phẩm</h3>
-                                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                         {products.map(p => (
-                                             <div key={p.id} onClick={() => handleAddToCart(p)} className={`border rounded-lg p-3 cursor-pointer ${p.stock > 0 ? 'hover:border-blue-500' : 'opacity-50 cursor-not-allowed'}`}>
-                                                 <p className="font-bold">{p.name}</p>
-                                                 <p className="text-sm text-green-600">{formatCurrency(p.sellingPrice)}</p>
-                                                 <p className="text-xs text-slate-500">Tồn kho: {p.stock}</p>
-                                             </div>
-                                         ))}
-                                     </div>
+                // --- Các Component Trang ---
+
+                /**
+                 * Component Bảng điều khiển (Dashboard).
+                 * Hiển thị tổng quan về các số liệu kinh doanh.
+                 */
+                const Dashboard = ({ products, orders, transactions, customers }) => {
+                    // Tính toán tổng giá trị tồn kho
+                    const totalInventoryValue = React.useMemo(() => products.reduce((sum, p) => sum + (p.stock || 0) * (p.purchasePrice || 0), 0), [products]);
+                    // Tính toán tổng doanh thu
+                    const totalRevenue = React.useMemo(() => orders.reduce((sum, o) => sum + (o.total || 0), 0), [orders]);
+                    
+                    // Tính toán tổng thu, chi, số dư tiền mặt và ngân hàng
+                    const { totalIncome, totalExpense, cashBalance, bankBalance } = React.useMemo(() => {
+                        let income = 0, expense = 0, cash = 0, bank = 0;
+                        transactions.forEach(t => {
+                            if (t.type === 'income') {
+                                income += t.amount;
+                                if (t.account === 'cash') cash += t.amount;
+                                else bank += t.amount;
+                            } else {
+                                expense += t.amount;
+                                if (t.account === 'cash') cash -= t.amount;
+                                else bank -= t.amount;
+                            }
+                        });
+                        return { totalIncome: income, totalExpense: expense, cashBalance: cash, bankBalance: bank };
+                    }, [transactions]);
+                    
+                    // Tính toán tổng công nợ phải thu
+                    const totalDebt = React.useMemo(() => {
+                        const customerDebts = {};
+                        customers.forEach(c => customerDebts[c.id] = 0);
+                        
+                        orders.forEach(order => {
+                            if (order.customerId && customerDebts.hasOwnProperty(order.customerId)) {
+                                const paidAmount = order.paidAmount || 0;
+                                customerDebts[order.customerId] += order.total - paidAmount;
+                            }
+                        });
+                        
+                        return Object.values(customerDebts).reduce((sum, debt) => sum + debt, 0);
+                    }, [orders, customers]);
+
+                    // Dữ liệu thống kê hiển thị trên Dashboard
+                    const stats = [
+                        { title: 'Tổng giá trị kho', value: formatCurrency(totalInventoryValue), color: 'bg-blue-500' },
+                        { title: 'Tổng doanh thu', value: formatCurrency(totalRevenue), color: 'bg-green-500' },
+                        { title: 'Công nợ phải thu', value: formatCurrency(totalDebt), color: 'bg-orange-500' },
+                        { title: 'Tổng tài sản', value: formatCurrency(cashBalance + bankBalance), color: 'bg-purple-500' },
+                    ];
+
+                    return (
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Bảng điều khiển</h2>
+                            {/* Các thẻ thống kê */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {stats.map(stat => (
+                                    <div key={stat.title} className="bg-white p-6 rounded-lg shadow">
+                                        <h3 className="text-sm font-medium">{stat.title}</h3>
+                                        <p className="text-2xl font-bold text-slate-800 mt-2">{stat.value}</p>
+                                    </div>
+                                ))}
+                            </div>
+                            {/* Biểu đồ Thu vs Chi và Cơ cấu tài sản */}
+                            <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <div className="bg-white p-6 rounded-lg shadow">
+                                    <h3 className="font-bold text-slate-800 mb-4">Thu vs Chi</h3>
+                                    <Bar data={{
+                                        labels: ['Tổng'],
+                                        datasets: [
+                                            { label: 'Thu', data: [totalIncome], backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+                                            { label: 'Chi', data: [totalExpense], backgroundColor: 'rgba(239, 68, 68, 0.7)' }
+                                        ]
+                                    }} options={{ responsive: true }} />
                                 </div>
                                 <div className="bg-white p-6 rounded-lg shadow">
-                                    <h3 className="font-bold text-lg mb-4">Thông tin đơn hàng</h3>
-                                    <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full p-2 border rounded mb-4">
-                                        <option value="">Chọn khách hàng</option>
-                                        {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                    </select>
-                                    <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
-                                        {cart.map(item => (
-                                            <div key={item.productId} className="flex justify-between items-center">
+                                    <h3 className="font-bold text-slate-800 mb-4">Cơ cấu tài sản</h3>
+                                    <Pie data={{
+                                        labels: ['Tiền mặt', 'Tài khoản ngân hàng'],
+                                        datasets: [{
+                                            data: [cashBalance, bankBalance],
+                                            backgroundColor: ['rgba(22, 163, 74, 0.7)', 'rgba(37, 99, 235, 0.7)'],
+                                        }]
+                                    }} options={{ responsive: true }} />
+                                </div>
+                            </div>
+                        </div>
+                    );
+                };
+
+                /**
+                 * Component Quản lý Sản phẩm.
+                 * Cho phép thêm, chỉnh sửa và xem danh sách sản phẩm.
+                 */
+                const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
+                    const [showForm, setShowForm] = React.useState(false);
+                    const [editingProduct, setEditingProduct] = React.useState(null);
+                    const [formData, setFormData] = React.useState({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
+
+                    // Xử lý thay đổi input của form
+                    const handleInputChange = (e) => {
+                        const { name, value } = e.target;
+                        setFormData(prev => ({ ...prev, [name]: value }));
+                    };
+
+                    // Xử lý gửi form (thêm/cập nhật sản phẩm)
+                    const handleSubmit = async (e) => {
+                        e.preventDefault();
+                        const data = {
+                            name: formData.name,
+                            purchasePrice: parseFloat(formData.purchasePrice) || 0,
+                            sellingPrice: parseFloat(formData.sellingPrice) || 0,
+                            stock: parseInt(formData.stock, 10) || 0,
+                        };
+                        try {
+                            if (editingProduct) {
+                                await setDocInFirestore('products', editingProduct.id, data);
+                            } else {
+                                await addDocToFirestore('products', data);
+                            }
+                            resetForm();
+                        } catch (error) {
+                            console.error("Error saving product:", error);
+                        }
+                    };
+
+                    // Đặt lại form về trạng thái ban đầu
+                    const resetForm = () => {
+                        setShowForm(false);
+                        setEditingProduct(null);
+                        setFormData({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
+                    };
+
+                    // Xử lý khi người dùng muốn chỉnh sửa sản phẩm
+                    const handleEdit = (product) => {
+                        setEditingProduct(product);
+                        setFormData({
+                            name: product.name,
+                            purchasePrice: product.purchasePrice,
+                            sellingPrice: product.sellingPrice,
+                            stock: product.stock,
+                        });
+                        setShowForm(true);
+                    };
+
+                    return (
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Sản phẩm</h2>
+                            <div className="flex justify-between items-center mb-6">
+                                <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
+                                    <Icon name="plus" className="w-5 h-5 mr-2" /> Thêm sản phẩm
+                                </button>
+                            </div>
+
+                            {/* Form thêm/chỉnh sửa sản phẩm */}
+                            {showForm && (
+                                <div className="bg-white p-6 rounded-lg shadow mb-6">
+                                    <h3 className="font-bold text-lg mb-4">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
+                                    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Tên sản phẩm" className="p-2 border rounded" required />
+                                        <input type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleInputChange} placeholder="Giá nhập" className="p-2 border rounded" />
+                                        <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="Giá bán" className="p-2 border rounded" required />
+                                        <input type="number" name="stock" value={formData.stock} onChange={handleInputChange} placeholder="Tồn kho" className="p-2 border rounded" />
+                                        <div className="md:col-span-2 flex justify-end gap-2">
+                                            <button type="button" onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
+                                            <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg">{editingProduct ? 'Lưu thay đổi' : 'Thêm'}</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            )}
+
+                            {/* Bảng danh sách sản phẩm */}
+                            <div className="bg-white rounded-lg shadow overflow-hidden">
+                                <table className="w-full">
+                                    <thead className="bg-slate-50 border-b">
+                                        <tr>
+                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Tên sản phẩm</th>
+                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá nhập</th>
+                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá bán</th>
+                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Tồn kho</th>
+                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Hành động</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {products.map(p => (
+                                            <tr key={p.id} className="border-b hover:bg-slate-50">
+                                                <td className="p-3">{p.name}</td>
+                                                <td className="p-3">{formatCurrency(p.purchasePrice)}</td>
+                                                <td className="p-3">{formatCurrency(p.sellingPrice)}</td>
+                                                <td className="p-3">{p.stock}</td>
+                                                <td className="p-3">
+                                                    <button onClick={() => handleEdit(p)} className="text-blue-500 hover:underline">Sửa</button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    );
+                };
+
+                /**
+                 * Component Quản lý Đơn hàng.
+                 * Cho phép tạo đơn hàng mới và xem danh sách các đơn hàng đã tạo.
+                 */
+                const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionPath, db }) => {
+                    const [showForm, setShowForm] = React.useState(false);
+                    const [cart, setCart] = React.useState([]);
+                    const [selectedCustomer, setSelectedCustomer] = React.useState('');
+                    const [invoice, setInvoice] = React.useState(null);
+
+                    // Thêm sản phẩm vào giỏ hàng
+                    const handleAddToCart = (product) => {
+                        const existing = cart.find(item => item.productId === product.id);
+                        if (existing) {
+                            if (existing.quantity < product.stock) {
+                                setCart(cart.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item));
+                            }
+                        } else {
+                            if (product.stock > 0) {
+                                setCart([...cart, { productId: product.id, name: product.name, price: product.sellingPrice, quantity: 1, maxStock: product.stock }]);
+                            }
+                        }
+                    };
+
+                    // Cập nhật số lượng sản phẩm trong giỏ hàng
+                    const updateQuantity = (productId, quantity) => {
+                        const product = products.find(p => p.id === productId);
+                        if (quantity > 0 && quantity <= product.stock) {
+                            setCart(cart.map(item => item.productId === productId ? { ...item, quantity } : item));
+                        }
+                    };
+                    
+                    // Xóa sản phẩm khỏi giỏ hàng
+                    const removeFromCart = (productId) => {
+                        setCart(cart.filter(item => item.productId !== productId));
+                    };
+
+                    // Tính tổng giá trị đơn hàng
+                    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+                    // Xử lý khi gửi đơn hàng
+                    const handleSubmitOrder = async () => {
+                        if (cart.length === 0 || !selectedCustomer) {
+                            console.warn("Vui lòng chọn sản phẩm và khách hàng.");
+                            return;
+                        }
+
+                        const orderData = {
+                            customerId: selectedCustomer,
+                            customerName: customers.find(c => c.id === selectedCustomer)?.name || 'Khách lẻ',
+                            items: cart.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity })),
+                            total: total,
+                            createdAt: new Date().toISOString(),
+                            paidAmount: 0, // Mặc định số tiền đã thanh toán
+                        };
+
+                        try {
+                            const orderRef = await addDocToFirestore('orders', orderData);
+
+                            // Cập nhật tồn kho sản phẩm bằng batch write
+                            const batch = firebase.firestore.writeBatch(db);
+                            cart.forEach(item => {
+                                const productRef = firebase.firestore.doc(db, getCollectionPath('products'), item.productId);
+                                const product = products.find(p => p.id === item.productId);
+                                batch.update(productRef, { stock: product.stock - item.quantity });
+                            });
+                            await batch.commit();
+                            
+                            setInvoice({ ...orderData, id: orderRef.id });
+                            resetForm();
+                        } catch (error) {
+                            console.error("Error creating order:", error);
+                        }
+                    };
+
+                    // Đặt lại form đơn hàng
+                    const resetForm = () => {
+                        setCart([]);
+                        setSelectedCustomer('');
+                        setShowForm(false);
+                    };
+                    
+                    // Xử lý in hóa đơn
+                    const handlePrint = () => {
+                        window.print();
+                    };
+
+                    return (
+                        <div>
+                            {/* Modal hóa đơn */}
+                            {invoice && (
+                                <div className="fixed inset-0 bg-black bg-opacity50 flex justify-center items-center z-50 p-4">
+                                    <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl relative">
+                                        <div className="invoice-print-area">
+                                            <h2 className="text-2xl font-bold mb-4 text-slate-800">Hóa đơn #{invoice.id.substring(0, 6).toUpperCase()}</h2>
+                                            <div className="grid grid-cols-2 gap-4 mb-6">
                                                 <div>
-                                                    <p className="font-semibold">{item.name}</p>
-                                                    <p className="text-sm">{formatCurrency(item.price)}</p>
+                                                    <h3 className="font-bold text-slate-600">Cửa hàng:</h3>
+                                                    <p>Ngô Văn Đô</p>
+                                                    <p>123 Đường ABC, Quận 1, TP. HCM</p>
                                                 </div>
-                                                <div className="flex items-center gap-2">
-                                                    <input type="number" value={item.quantity} onChange={(e) => updateQuantity(item.productId, parseInt(e.target.value))} className="w-16 p-1 border rounded" />
-                                                    <button onClick={() => removeFromCart(item.productId)} className="text-red-500">Xóa</button>
+                                                <div className="text-right">
+                                                    <h3 className="font-bold text-slate-600">Khách hàng:</h3>
+                                                    <p>{invoice.customerName}</p>
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                    <div className="border-t pt-4">
-                                        <p className="text-lg font-bold flex justify-between">Tổng: <span>{formatCurrency(total)}</span></p>
-                                        <div className="flex justify-end gap-2 mt-4">
-                                           <button onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
-                                           <button onClick={handleSubmitOrder} className="bg-green-500 text-white px-4 py-2 rounded-lg">Tạo đơn</button>
+                                            <p className="mb-4"><strong>Ngày tạo:</strong> {new Date(invoice.createdAt).toLocaleString('vi-VN')}</p>
+                                            <table className="w-full text-left">
+                                               <thead className="bg-slate-100">
+                                                    <tr>
+                                                        <th className="p-2">Sản phẩm</th>
+                                                        <th className="p-2 text-right">Số lượng</th>
+                                                        <th className="p-2 text-right">Đơn giá</th>
+                                                        <th className="p-2 text-right">Thành tiền</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {invoice.items.map(item => (
+                                                        <tr key={item.productId} className="border-b">
+                                                            <td className="p-2">{item.name}</td>
+                                                            <td className="p-2 text-right">{item.quantity}</td>
+                                                            <td className="p-2 text-right">{formatCurrency(item.price)}</td>
+                                                            <td className="p-2 text-right">{formatCurrency(item.price * item.quantity)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                                <tfoot>
+                                                    <tr>
+                                                        <td colSpan="3" className="text-right font-bold p-2 border-t-2 border-slate-600">Tổng cộng:</td>
+                                                        <td className="text-right font-bold p-2 border-t-2 border-slate-600">{formatCurrency(invoice.total)}</td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                             <div className="text-center mt-8 text-sm text-slate-500">
+                                                <p>Cảm ơn quý khách đã mua hàng!</p>
+                                            </div>
+                                        </div>
+                                        <div className="text-right mt-8 no-print">
+                                            <button onClick={handlePrint} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center inline-flex mr-2">
+                                                <Icon name="print" className="w-5 h-5 mr-2"/>
+                                                In hóa đơn
+                                            </button>
+                                            <button onClick={() => setInvoice(null)} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">Đóng</button>
                                         </div>
                                     </div>
                                 </div>
+                            )}
+                            
+                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Đơn hàng</h2>
+                            <div className="flex justify-between items-center mb-6">
+                                <button onClick={() => setShowForm(true)} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
+                                    <Icon name="plus" className="w-5 h-5 mr-2" /> Lên đơn hàng
+                                </button>
                             </div>
-                        )}
 
-                        {/* Bảng danh sách đơn hàng */}
-                        <div className="bg-white rounded-lg shadow overflow-hidden">
-                            <table className="w-full">
-                                <thead className="bg-slate-50 border-b">
-                                    <tr>
-                                        <th className="p-3 text-left">Mã ĐH</th>
-                                        <th className="p-3 text-left">Khách hàng</th>
-                                        <th className="p-3 text-left">Ngày tạo</th>
-                                        <th className="p-3 text-left">Tổng tiền</th>
+                            {/* Form tạo đơn hàng */}
+                            {showForm && (
+                                <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow">
+                                         <h3 className="font-bold text-lg mb-4">Chọn sản phẩm</h3>
+                                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                             {products.map(p => (
+                                                 <div key={p.id} onClick={() => handleAddToCart(p)} className={`border rounded-lg p-3 cursor-pointer ${p.stock > 0 ? 'hover:border-blue-500' : 'opacity-50 cursor-not-allowed'}`}>
+                                                     <p className="font-bold">{p.name}</p>
+                                                     <p className="text-sm text-green-600">{formatCurrency(p.sellingPrice)}</p>
+                                                     <p className="text-xs text-slate-500">Tồn kho: {p.stock}</p>
+                                                 </div>
+                                             ))}
+                                         </div>
+                                    </div>
+                                    <div className="bg-white p-6 rounded-lg shadow">
+                                        <h3 className="font-bold text-lg mb-4">Thông tin đơn hàng</h3>
+                                        <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full p-2 border rounded mb-4">
+                                            <option value="">Chọn khách hàng</option>
+                                            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                        </select>
+                                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                                            {cart.map(item => (
+                                                <div key={item.productId} className="flex justify-between items-center">
+                                                    <div>
+                                                        <p className="font-semibold">{item.name}</p>
+                                                        <p className="text-sm">{formatCurrency(item.price)}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <input type="number" value={item.quantity} onChange={(e) => updateQuantity(item.productId, parseInt(e.target.value))} className="w-16 p-1 border rounded" />
+                                                        <button onClick={() => removeFromCart(item.productId)} className="text-red-500">Xóa</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <div className="border-t pt-4">
+                                            <p className="text-lg font-bold flex justify-between">Tổng: <span>{formatCurrency(total)}</span></p>
+                                            <div className="flex justify-end gap-2 mt-4">
+                                               <button onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
+                                               <button onClick={handleSubmitOrder} className="bg-green-500 text-white px-4 py-2 rounded-lg">Tạo đơn</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Bảng danh sách đơn hàng */}
+                            <div className="bg-white rounded-lg shadow overflow-hidden">
+                                <table className="w-full">
+                                    <thead className="bg-slate-50 border-b">
+                                        <tr>
+                                            <th className="p-3 text-left">Mã ĐH</th>
+                                            <th className="p-3 text-left">Khách hàng</th>
+                                            <th className="p-3 text-left">Ngày tạo</th>
+                                            <th className="p-3 text-left">Tổng tiền</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -843,8 +859,8 @@
                                 </div>
                             </div>
                         )}
+                        <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Khách hàng</h2>
                         <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-bold text-slate-800">Quản lý Khách hàng</h2>
                             <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
                                 <Icon name="plus" className="w-5 h-5 mr-2" /> Thêm khách hàng
                             </button>
