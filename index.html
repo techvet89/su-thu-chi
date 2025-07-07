@@ -35,12 +35,38 @@
         .modal-content {
             transition: transform 0.3s ease, opacity 0.3s ease;
         }
+        /* Animation for error box */
+        @keyframes pulse-border {
+          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+          70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .pulsing-error {
+          animation: pulse-border 2s infinite;
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
+    
+    <!-- AUTHENTICATION ERROR OVERLAY -->
+    <div id="auth-error-overlay" class="fixed inset-0 bg-white z-50 p-6 text-center flex items-center justify-center hidden">
+        <div class="max-w-2xl mx-auto border-4 border-orange-500 rounded-2xl p-8 shadow-2xl pulsing-error">
+            <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-16 w-16 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h1 class="text-3xl font-bold text-orange-600 mt-4 mb-4">HÀNH ĐỘNG BẮT BUỘC</h1>
+            <p class="text-gray-700 text-lg mb-6">Bạn cần bật "Đăng nhập ẩn danh" trong Firebase để ứng dụng hoạt động.</p>
+            <div class="text-left bg-gray-100 p-4 rounded-lg border border-gray-200 space-y-3">
+                <p><strong>Bước 1:</strong> Mở <a href="https://console.firebase.google.com/" target="_blank" class="text-blue-600 underline font-semibold">Firebase Console</a>, vào dự án của bạn, chọn mục <strong>Authentication</strong> từ menu bên trái.</p>
+                <p><strong>Bước 2:</strong> Nhấp vào tab <strong>Sign-in method</strong>.</p>
+                <p><strong>Bước 3:</strong> Nhấn nút <strong>Add new provider</strong>, chọn <strong>Anonymous</strong>, gạt nút **Enable** và nhấn **Save**.</p>
+            </div>
+            <p class="mt-6 text-base text-gray-600">Sau khi bật tính năng này, hãy <a href="javascript:location.reload();" class="text-blue-600 underline font-semibold">tải lại trang này</a>.</p>
+        </div>
+    </div>
 
     <!-- MAIN CONTAINER -->
-    <div class="container mx-auto max-w-2xl p-4 md:p-6">
+    <div id="main-container" class="container mx-auto max-w-2xl p-4 md:p-6">
         
         <!-- HEADER -->
         <header class="text-center mb-6">
@@ -189,12 +215,23 @@
         import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIG & INITIALIZATION ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-expense-tracker-app';
+        
+        // CẤU HÌNH FIREBASE ĐÃ ĐƯỢC TỰ ĐỘNG CẬP NHẬT
+        const firebaseConfig = {
+          apiKey: "AIzaSyDY-LHMVcRN_mRuxSmO-4fTcQoMQvxaMRE",
+          authDomain: "do12341.firebaseapp.com",
+          projectId: "do12341",
+          storageBucket: "do12341.appspot.com",
+          messagingSenderId: "727920669744",
+          appId: "1:727920669744:web:7e9c43d26626083d6969f5",
+          measurementId: "G-V7RMVF8JDM"
+        };
         
         let db, auth, userId, transactionsUnsubscribe;
 
         // --- UI ELEMENTS ---
+        const mainContainer = document.getElementById('main-container');
+        const authErrorOverlay = document.getElementById('auth-error-overlay');
         const totalIncomeEl = document.getElementById('total-income');
         const totalExpenseEl = document.getElementById('total-expense');
         const cashBalanceEl = document.getElementById('cash-balance');
@@ -335,7 +372,7 @@
             if (transactionsUnsubscribe) transactionsUnsubscribe();
             if (!userId) return;
 
-            const transactionsCol = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+            const transactionsCol = collection(db, `users/${userId}/transactions`);
             const q = query(transactionsCol);
 
             transactionsUnsubscribe = onSnapshot(q, (querySnapshot) => {
@@ -357,7 +394,7 @@
                 return false;
             }
             try {
-                const transactionsCol = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+                const transactionsCol = collection(db, `users/${userId}/transactions`);
                 await addDoc(transactionsCol, {
                     ...data,
                     createdAt: serverTimestamp()
@@ -374,7 +411,7 @@
         async function deleteTransaction(id) {
             if (!window.confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) return;
             try {
-                const docRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, id);
+                const docRef = doc(db, `users/${userId}/transactions`, id);
                 await deleteDoc(docRef);
                 showToast("Đã xóa giao dịch.");
             } catch (error) {
@@ -517,25 +554,25 @@
                         userInfoEl.textContent = `User ID: ${userId}`;
                         getTransactions();
                     } else {
-                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                            signInWithCustomToken(auth, __initial_auth_token).catch(error => {
-                                console.error("Lỗi đăng nhập bằng token:", error);
-                                signInAnonymously(auth);
-                            });
-                        } else {
-                            signInAnonymously(auth).catch(error => {
-                                console.error("Lỗi đăng nhập ẩn danh:", error);
+                        signInAnonymously(auth).catch(error => {
+                            console.error("Lỗi đăng nhập ẩn danh:", error);
+                            // Check for the specific error code for disabled anonymous auth
+                            if (error.code === 'auth/operation-not-allowed' || error.code === 'auth/admin-restricted-operation') {
+                                mainContainer.style.display = 'none';
+                                authErrorOverlay.classList.remove('hidden');
+                            } else {
                                 userInfoEl.textContent = "Không thể xác thực người dùng.";
-                            });
-                        }
+                                showToast("Lỗi xác thực: " + error.message, 5000);
+                            }
+                        });
                     }
                 });
 
                 setupEventListeners();
             } catch(e) {
                 console.error("Lỗi khởi tạo Firebase: ", e);
-                showToast("Không thể kết nối đến cơ sở dữ liệu.");
-                userInfoEl.textContent = "Lỗi kết nối.";
+                // Fallback for any other initialization error
+                mainContainer.innerHTML = `<div class="p-6 text-center"><h1 class="text-2xl font-bold text-red-600">Lỗi Khởi Tạo Nghiêm Trọng</h1><p>${e.message}</p></div>`;
             }
         }
 
