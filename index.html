@@ -20,6 +20,21 @@
             font-family: 'Inter', sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
+        .summary-card {
+            transition: transform 0.2s ease-in-out;
+        }
+        .summary-card:hover {
+            transform: translateY(-4px);
+        }
+        .transaction-item:last-child {
+            border-bottom: none;
+        }
+        .modal-backdrop {
+            transition: opacity 0.3s ease;
+        }
+        .modal-content {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800">
@@ -33,19 +48,25 @@
             <p class="text-gray-500 mt-1">Quản lý tài chính cá nhân của bạn một cách thông minh.</p>
         </header>
 
-        <!-- SUMMARY SECTION -->
-        <section id="summary" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                <h3 class="text-sm font-medium text-green-600">Tổng Thu</h3>
-                <p id="total-income" class="text-2xl font-semibold text-green-500">0 ₫</p>
+        <!-- SUMMARY SECTION - UPDATED -->
+        <section id="summary" class="grid grid-cols-2 md:grid-cols-2 gap-4 mb-6">
+            <div class="summary-card bg-white p-4 rounded-xl border border-gray-200 shadow-sm col-span-2 grid grid-cols-2 gap-4">
+                 <div>
+                    <h3 class="text-sm font-medium text-green-600">Tổng Thu</h3>
+                    <p id="total-income" class="text-xl font-semibold text-green-500">0 ₫</p>
+                </div>
+                <div>
+                    <h3 class="text-sm font-medium text-red-600">Tổng Chi</h3>
+                    <p id="total-expense" class="text-xl font-semibold text-red-500">0 ₫</p>
+                </div>
             </div>
-            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                <h3 class="text-sm font-medium text-red-600">Tổng Chi</h3>
-                <p id="total-expense" class="text-2xl font-semibold text-red-500">0 ₫</p>
+            <div class="summary-card bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="text-sm font-medium text-blue-600">Số dư tiền mặt</h3>
+                <p id="cash-balance" class="text-2xl font-semibold text-blue-500">0 ₫</p>
             </div>
-            <div class="bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                <h3 class="text-sm font-medium text-blue-600">Số Dư</h3>
-                <p id="balance" class="text-2xl font-semibold text-blue-500">0 ₫</p>
+            <div class="summary-card bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
+                <h3 class="text-sm font-medium text-indigo-600">Số dư tài khoản</h3>
+                <p id="bank-balance" class="text-2xl font-semibold text-indigo-500">0 ₫</p>
             </div>
         </section>
 
@@ -74,32 +95,76 @@
         </div>
     </div>
 
-    <!-- Modals and Toast HTML remains the same as previous versions -->
-    <!-- ADD/EDIT TRANSACTION MODAL -->
-    <div id="add-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+    <!-- ADD/EDIT TRANSACTION MODAL - UPDATED -->
+    <div id="add-modal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-full max-w-md p-6 transform scale-95 opacity-0">
             <h2 class="text-xl font-bold mb-4">Thêm Giao Dịch Mới</h2>
-            <form id="add-form"><!-- Form content --></form>
+            <form id="add-form">
+                <div class="mb-4">
+                    <label for="type" class="block text-sm font-medium text-gray-700 mb-1">Loại giao dịch</label>
+                    <select id="type" name="type" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <option value="expense">Chi Tiêu</option>
+                        <option value="income">Thu Nhập</option>
+                    </select>
+                </div>
+                <div class="mb-4">
+                    <label for="description" class="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
+                    <input type="text" id="description" name="description" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                <div class="mb-4">
+                    <label for="amount" class="block text-sm font-medium text-gray-700 mb-1">Số tiền (₫)</label>
+                    <input type="number" id="amount" name="amount" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                <div class="mb-4">
+                    <label for="source" class="block text-sm font-medium text-gray-700 mb-1">Nguồn tiền</label>
+                    <select id="source" name="source" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500">
+                        <option value="bank">Tài khoản</option>
+                        <option value="cash">Tiền mặt</option>
+                    </select>
+                </div>
+                 <div class="mb-6">
+                    <label for="category" class="block text-sm font-medium text-gray-700 mb-1">Danh mục</label>
+                    <input type="text" id="category" name="category" list="categories" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="VD: Ăn uống, Di chuyển...">
+                    <datalist id="categories">
+                        <option value="Ăn uống">
+                        <option value="Di chuyển">
+                        <option value="Mua sắm">
+                        <option value="Hóa đơn">
+                        <option value="Giải trí">
+                        <option value="Lương">
+                        <option value="Khác">
+                    </datalist>
+                </div>
+                <div class="flex justify-end gap-4">
+                    <button type="button" id="cancel-add-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Hủy</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Lưu</button>
+                </div>
+            </form>
         </div>
     </div>
+
     <!-- AI IMPORT MODAL -->
-    <div id="ai-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
-         <div class="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+    <div id="ai-modal" class="modal-backdrop fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 hidden">
+        <div class="modal-content bg-white rounded-lg shadow-xl w-full max-w-md p-6 transform scale-95 opacity-0">
             <h2 class="text-xl font-bold mb-2">Nhập liệu bằng AI</h2>
-            <p class="text-sm text-gray-500 mb-4">Nhập yêu cầu bằng ngôn ngữ tự nhiên.</p>
+            <p class="text-sm text-gray-500 mb-4">Nhập yêu cầu bằng ngôn ngữ tự nhiên hoặc dán nội dung tin nhắn vào đây.</p>
             <form id="ai-form">
-                <textarea id="ai-input" rows="6" class="w-full p-2 border border-gray-300 rounded-md" placeholder="Ví dụ: chi 50k tiền uống cafe..."></textarea>
+                <textarea id="ai-input" rows="6" class="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500" placeholder="Ví dụ: chi 50k tiền mặt uống cafe, hoặc dán nội dung SMS từ ngân hàng..."></textarea>
                 <div id="ai-status" class="text-sm text-yellow-600 mt-2 h-5"></div>
                 <div class="flex justify-end gap-4 mt-4">
-                    <button type="button" id="cancel-ai-btn" class="px-4 py-2 bg-gray-200 rounded-md">Hủy</button>
-                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md flex items-center">
+                    <button type="button" id="cancel-ai-btn" class="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Hủy</bitton>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center justify-center gap-2">
                         <span id="ai-submit-text">Xử lý</span>
-                        <svg id="ai-spinner" class="animate-spin ml-2 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <svg id="ai-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
                     </button>
                 </div>
             </form>
         </div>
     </div>
+    
     <!-- TOAST NOTIFICATION -->
     <div id="toast" class="fixed bottom-5 right-5 bg-gray-900 text-white py-2 px-5 rounded-lg shadow-lg opacity-0 translate-y-10 transition-all duration-300">
         <p id="toast-message"></p>
@@ -118,10 +183,363 @@
         }
     </script>
     <script type="module">
-        // All the Firebase and app logic JavaScript from the previous version goes here.
-        // It remains unchanged.
-        // (For brevity, not re-pasting the entire JS code block here)
-        // Please copy the <script type="module"> content from the previous working version.
+        // Import các hàm cần thiết từ Firebase SDK
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, doc, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- CONFIG & INITIALIZATION ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-expense-tracker-app';
+        
+        let db, auth, userId, transactionsUnsubscribe;
+
+        // --- UI ELEMENTS ---
+        const totalIncomeEl = document.getElementById('total-income');
+        const totalExpenseEl = document.getElementById('total-expense');
+        const cashBalanceEl = document.getElementById('cash-balance');
+        const bankBalanceEl = document.getElementById('bank-balance');
+        const transactionsListEl = document.getElementById('transactions-list');
+        const noTransactionsMsg = document.getElementById('no-transactions-msg');
+        const userInfoEl = document.getElementById('user-info');
+        const aiSubmitBtn = document.querySelector('#ai-form button[type="submit"]');
+        const aiSubmitText = document.getElementById('ai-submit-text');
+        const aiSpinner = document.getElementById('ai-spinner');
+
+        // Modals
+        const addModal = document.getElementById('add-modal');
+        const aiModal = document.getElementById('ai-modal');
+        const addForm = document.getElementById('add-form');
+        const aiForm = document.getElementById('ai-form');
+
+        // Toast
+        const toastEl = document.getElementById('toast');
+        const toastMessageEl = document.getElementById('toast-message');
+
+        // --- HELPER FUNCTIONS ---
+        function showToast(message, duration = 3000) {
+            toastMessageEl.textContent = message;
+            toastEl.classList.remove('opacity-0', 'translate-y-10');
+            setTimeout(() => {
+                toastEl.classList.add('opacity-0', 'translate-y-10');
+            }, duration);
+        }
+        
+        function formatCurrency(num) {
+            if (typeof num !== 'number') return '0 ₫';
+            return num.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+        }
+
+        function toggleModal(modal, show) {
+            const content = modal.querySelector('.modal-content');
+            if (show) {
+                modal.classList.remove('hidden');
+                setTimeout(() => {
+                    modal.classList.remove('bg-opacity-0');
+                    if (content) content.classList.remove('scale-95', 'opacity-0');
+                }, 10);
+            } else {
+                modal.classList.add('bg-opacity-0');
+                if (content) content.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        // --- RENDER FUNCTIONS ---
+        function renderTransactions(transactions) {
+            transactionsListEl.innerHTML = ''; 
+            if (transactions.length === 0) {
+                if(noTransactionsMsg) {
+                    transactionsListEl.appendChild(noTransactionsMsg);
+                    noTransactionsMsg.style.display = 'block';
+                }
+                return;
+            }
+            if(noTransactionsMsg) noTransactionsMsg.style.display = 'none';
+
+            const sortedTransactions = transactions.sort((a, b) => {
+                const dateA = a.createdAt?.toDate() || new Date(0);
+                const dateB = b.createdAt?.toDate() || new Date(0);
+                return dateB - dateA;
+            });
+
+            sortedTransactions.forEach(t => {
+                const isExpense = t.type === 'expense';
+                const sign = isExpense ? '-' : '+';
+                const amountColor = isExpense ? 'text-red-500' : 'text-green-500';
+                const date = t.createdAt?.toDate() ? t.createdAt.toDate().toLocaleDateString('vi-VN') : 'Không có ngày';
+                const sourceText = t.source === 'cash' ? 'Tiền mặt' : 'Tài khoản';
+                const sourceColor = t.source === 'cash' ? 'bg-blue-100 text-blue-800' : 'bg-indigo-100 text-indigo-800';
+
+                const item = document.createElement('div');
+                item.className = 'transaction-item flex items-center justify-between p-4 border-b border-gray-100';
+                item.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full flex items-center justify-center ${isExpense ? 'bg-red-100' : 'bg-green-100'}">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 ${amountColor}">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="${isExpense ? 'M2.25 18L9 11.25l4.328 4.329 7.09-7.091M2.25 12.75h7.5m7.5 7.5h-7.5' : 'M2.25 6L9 12.75l4.328-4.329 7.09 7.091M2.25 11.25h7.5m7.5-7.5h-7.5'}" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="font-semibold text-gray-800">${t.description}</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                <span class="text-xs px-2 py-0.5 rounded-full ${sourceColor}">${sourceText}</span>
+                                <p class="text-sm text-gray-500">${t.category || 'Chưa phân loại'} · ${date}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-right">
+                        <p class="font-bold ${amountColor}">${sign}${formatCurrency(t.amount)}</p>
+                        <button data-id="${t.id}" class="delete-btn text-xs text-gray-400 hover:text-red-500 mt-1">Xóa</button>
+                    </div>
+                `;
+                transactionsListEl.appendChild(item);
+            });
+        }
+
+        // UPDATED SUMMARY FUNCTION
+        function updateSummary(transactions) {
+            let totalIncome = 0;
+            let totalExpense = 0;
+            let cashBalance = 0;
+            let bankBalance = 0;
+
+            transactions.forEach(t => {
+                if (t.type === 'income') {
+                    totalIncome += t.amount;
+                    if (t.source === 'cash') {
+                        cashBalance += t.amount;
+                    } else { // 'bank' or default
+                        bankBalance += t.amount;
+                    }
+                } else { // 'expense'
+                    totalExpense += t.amount;
+                    if (t.source === 'cash') {
+                        cashBalance -= t.amount;
+                    } else { // 'bank' or default
+                        bankBalance -= t.amount;
+                    }
+                }
+            });
+
+            totalIncomeEl.textContent = formatCurrency(totalIncome);
+            totalExpenseEl.textContent = formatCurrency(totalExpense);
+            cashBalanceEl.textContent = formatCurrency(cashBalance);
+            bankBalanceEl.textContent = formatCurrency(bankBalance);
+        }
+
+        // --- FIRESTORE LOGIC ---
+        function getTransactions() {
+            if (transactionsUnsubscribe) transactionsUnsubscribe();
+            if (!userId) return;
+
+            const transactionsCol = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+            const q = query(transactionsCol);
+
+            transactionsUnsubscribe = onSnapshot(q, (querySnapshot) => {
+                const transactions = [];
+                querySnapshot.forEach((doc) => {
+                    transactions.push({ id: doc.id, ...doc.data() });
+                });
+                renderTransactions(transactions);
+                updateSummary(transactions);
+            }, (error) => {
+                console.error("Lỗi khi lấy dữ liệu: ", error);
+                showToast("Không thể tải dữ liệu. Vui lòng thử lại.");
+            });
+        }
+
+        async function addTransaction(data) {
+            if (!userId) {
+                showToast("Lỗi: Không tìm thấy người dùng.");
+                return false;
+            }
+            try {
+                const transactionsCol = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+                await addDoc(transactionsCol, {
+                    ...data,
+                    createdAt: serverTimestamp()
+                });
+                showToast("Đã thêm giao dịch thành công!");
+                return true;
+            } catch (error) {
+                console.error("Lỗi khi thêm giao dịch: ", error);
+                showToast("Thêm giao dịch thất bại.");
+                return false;
+            }
+        }
+
+        async function deleteTransaction(id) {
+            if (!window.confirm('Bạn có chắc chắn muốn xóa giao dịch này?')) return;
+            try {
+                const docRef = doc(db, `artifacts/${appId}/users/${userId}/transactions`, id);
+                await deleteDoc(docRef);
+                showToast("Đã xóa giao dịch.");
+            } catch (error) {
+                console.error("Lỗi khi xóa giao dịch: ", error);
+                showToast("Xóa giao dịch thất bại.");
+            }
+        }
+        
+        function setAISubmitButtonLoading(isLoading) {
+            if (isLoading) {
+                aiSubmitBtn.disabled = true;
+                aiSubmitText.classList.add('hidden');
+                aiSpinner.classList.remove('hidden');
+            } else {
+                aiSubmitBtn.disabled = false;
+                aiSubmitText.classList.remove('hidden');
+                aiSpinner.classList.add('hidden');
+            }
+        }
+
+        // --- EVENT LISTENERS ---
+        function setupEventListeners() {
+            document.getElementById('open-add-modal-btn').addEventListener('click', () => toggleModal(addModal, true));
+            document.getElementById('open-ai-modal-btn').addEventListener('click', () => toggleModal(aiModal, true));
+
+            document.getElementById('cancel-add-btn').addEventListener('click', () => toggleModal(addModal, false));
+            document.getElementById('cancel-ai-btn').addEventListener('click', () => toggleModal(aiModal, false));
+            addModal.addEventListener('click', (e) => { if (e.target.id === 'add-modal') toggleModal(addModal, false); });
+            aiModal.addEventListener('click', (e) => { if (e.target.id === 'ai-modal') toggleModal(aiModal, false); });
+
+            // UPDATED ADD FORM
+            addForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const success = await addTransaction({
+                    type: addForm.type.value,
+                    description: addForm.description.value,
+                    amount: parseFloat(addForm.amount.value),
+                    source: addForm.source.value, // Added source
+                    category: addForm.category.value
+                });
+                if (success) {
+                    addForm.reset();
+                    toggleModal(addModal, false);
+                }
+            });
+
+            // UPDATED AI FORM
+            aiForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const userInput = document.getElementById('ai-input').value;
+                const statusEl = document.getElementById('ai-status');
+                if (!userInput.trim()) {
+                    statusEl.textContent = "Vui lòng nhập nội dung.";
+                    return;
+                }
+                statusEl.textContent = "AI đang phân tích...";
+                setAISubmitButtonLoading(true);
+
+                try {
+                    const prompt = `Bạn là một trợ lý tài chính chuyên nghiệp. Phân tích văn bản tiếng Việt sau đây và trích xuất chi tiết giao dịch.
+                    Văn bản: "${userInput}"
+                    
+                    Hãy trả về kết quả CHỈ LÀ một đối tượng JSON, không có bất kỳ văn bản giải thích hay định dạng markdown nào.
+                    Đối tượng JSON phải có các trường sau: "amount" (NUMBER), "description" (STRING), "type" ('income' hoặc 'expense'), "category" (STRING), và "source" ('cash' hoặc 'bank').
+                    - Chuyển đổi các giá trị như 'k' thành '000' và 'tr' thành '000000'.
+                    - 'type' phải là 'expense' hoặc 'income'.
+                    - 'category' nên được suy ra từ mô tả.
+                    - 'source' phải là 'cash' nếu văn bản chứa từ "tiền mặt". Nếu không, hoặc nếu nó đề cập đến ngân hàng/thẻ, hãy mặc định là 'bank'.
+                    - 'description' phải mô tả ngắn gọn giao dịch.`;
+
+                    const payload = {
+                        contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    };
+
+                    const apiKey = ""; // API key is handled by the environment
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        throw new Error(`API call failed with status: ${response.status}. Body: ${errorBody}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0].text) {
+                        let jsonText = result.candidates[0].content.parts[0].text;
+                        
+                        const jsonMatch = jsonText.match(/```(json)?\s*([\s\S]*?)\s*```/);
+                        if (jsonMatch && jsonMatch[2]) {
+                            jsonText = jsonMatch[2];
+                        }
+
+                        const parsedData = JSON.parse(jsonText);
+
+                        const success = await addTransaction(parsedData);
+                        if (success) {
+                            aiForm.reset();
+                            statusEl.textContent = "";
+                            toggleModal(aiModal, false);
+                        } else {
+                            statusEl.textContent = "Đã xảy ra lỗi khi lưu.";
+                        }
+                    } else {
+                         throw new Error("Không nhận được phản hồi hợp lệ từ AI. Phản hồi: " + JSON.stringify(result));
+                    }
+
+                } catch (error) {
+                    console.error("Lỗi khi gọi AI:", error);
+                    statusEl.textContent = "AI không thể xử lý yêu cầu này.";
+                    showToast("Lỗi AI: " + error.message, 5000);
+                } finally {
+                    setAISubmitButtonLoading(false);
+                }
+            });
+
+            transactionsListEl.addEventListener('click', (e) => {
+                if (e.target.classList.contains('delete-btn')) {
+                    const id = e.target.dataset.id;
+                    deleteTransaction(id);
+                }
+            });
+        }
+
+        // --- INITIALIZATION ---
+        async function main() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userInfoEl.textContent = `User ID: ${userId}`;
+                        getTransactions();
+                    } else {
+                         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            signInWithCustomToken(auth, __initial_auth_token).catch(error => {
+                                console.error("Lỗi đăng nhập bằng token:", error);
+                                signInAnonymously(auth);
+                            });
+                        } else {
+                            signInAnonymously(auth).catch(error => {
+                                console.error("Lỗi đăng nhập ẩn danh:", error);
+                                userInfoEl.textContent = "Không thể xác thực người dùng.";
+                            });
+                        }
+                    }
+                });
+
+                setupEventListeners();
+            } catch(e) {
+                console.error("Lỗi khởi tạo Firebase: ", e);
+                showToast("Không thể kết nối đến cơ sở dữ liệu.");
+                userInfoEl.textContent = "Lỗi kết nối.";
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', main);
     </script>
 </body>
 </html>
