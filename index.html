@@ -245,9 +245,8 @@
           measurementId: "G-V7RMVF8JDM"
         };
 
-        // TODO: DÁN API KEY CỦA BẠN VÀO ĐÂY
-        // Hướng dẫn: Truy cập https://aistudio.google.com/app/apikey để lấy key
-        const geminiApiKey = "YOUR_GEMINI_API_KEY";
+        // GEMINI API KEY ĐÃ ĐƯỢC CẬP NHẬT
+        const geminiApiKey = "AIzaSyAs0QDCxzbipEe-cL5bVkvJS3XbslAB0Ug";
         
         let db, auth, userId, transactionsUnsubscribe;
 
@@ -461,6 +460,7 @@
             document.getElementById('open-ai-modal-btn').addEventListener('click', () => {
                 if (geminiApiKey === "YOUR_GEMINI_API_KEY") {
                     mainContainer.style.display = 'none';
+                    authErrorOverlay.style.display = 'none'; // Hide other errors
                     geminiErrorOverlay.classList.remove('hidden');
                     return;
                 }
