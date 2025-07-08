@@ -1,1417 +1,1177 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
-    <!-- PWA Manifest Link - Đảm bảo file manifest.json và sw.js nằm cùng thư mục với index.html này -->
-    <link rel="manifest" href="manifest.json">
-    
-    <!-- Theme Color for browsers -->
-    <meta name="theme-color" content="#0284c7"/>
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, doc, addDoc, getDocs, onSnapshot, setDoc, deleteDoc, query, where, writeBatch } from 'firebase/firestore';
+import { Bar, Pie } from 'react-chartjs-2';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
 
-    <title>Sổ Thu Chi - Quản lý Kinh doanh</title>
+// Register Chart.js components
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, ArcElement);
+
+// --- Helper Functions & Icons ---
+
+const formatCurrency = (amount) => {
+    if (typeof amount !== 'number') return '0 ₫';
+    return amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
+};
+
+const Icon = ({ name, className }) => {
+    const icons = {
+        dashboard: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h12A2.25 2.25 0 0020.25 14.25V3.75M3.75 3h16.5M3.75 3v1.5M16.5 3v1.5m-12.75 3h11.25" />,
+        products: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />,
+        orders: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
+        customers: <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.101c1.203-1.824 1.203-4.125 0-5.949a4.125 4.125 0 00-7.533-2.493M3.375 21v-.003c0-1.113.285-2.16.786-3.07M3.375 21v.106A12.318 12.318 0 008.624 21c2.331 0 4.512-.645 6.374-1.766l.001-.101c-1.203-1.824-1.203-4.125 0-5.949" />,
+        finance: <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414-.336.75-.75.75h-.75m0-1.5h.375c.621 0 1.125.504 1.125 1.125v.375m-18 0h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6z" />,
+        reports: <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h15.75c.621 0 1.125.504 1.125 1.125v6.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 19.875v-6.75zM3 8.625c0-.621.504-1.125 1.125-1.125h15.75c.621 0 1.125.504 1.125 1.125v.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 9.375v-.75zM3.75 3a1.125 1.125 0 00-1.125 1.125v.75c0 .621.504 1.125 1.125 1.125h16.5c.621 0 1.125-.504 1.125-1.125v-.75A1.125 1.125 0 0020.25 3H3.75z" />,
+        ai: <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 16.5V21m3.75-18v1.5M19.5 8.25h-1.5m-16.5 0h1.5m15 3.75h-1.5m-15 0h1.5m15 3.75h-1.5m-3.75 3.75v1.5m-3-19.5v1.5" />,
+        plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
+        print: <path strokeLinecap="round" strokeLinejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.32 0c.045-.247.082-.496.111-.746A48.97 48.97 0 0012 15.75c-2.551 0-5.056.2-7.5.582a48.971 48.971 0 00.111.746m14.78 0a58.58 58.58 0 00-4.817-1.579 58.58 58.58 0 00-4.817 1.579m14.78 0L12 21m-1.657-.343a32.025 32.025 0 01-4.132 0L6.34 18m11.32 0l-1.657 2.657a32.025 32.025 0 01-4.132 0L6.34 18m11.32 0l-1.657-2.657a32.025 32.025 0 00-4.132 0L6.34 18m6.34-4.875A3.75 3.75 0 0012 6.375h-1.5a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5v-1.5a3.75 3.75 0 00-3.75-3.75H6.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.75 3.75 0 003.75-3.75v-1.5c0-.621-.504-1.125-1.125-1.125H12a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5v-1.5a3.75 3.75 0 00-3.75-3.75h-1.5a1.125 1.125 0 00-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125H12a3.75 3.75 0 003.75-3.75v-1.5c0-.621-.504-1.125-1.125-1.125h-1.5a3.75 3.75 0 00-3.75 3.75v1.5c0 .621.504 1.125 1.125 1.125h1.5a3.75 3.75 0 003.75-3.75V9.375" />,
+        send: <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />,
+        loading: <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" />,
+    };
+    return <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className || "w-6 h-6"}>{icons[name]}</svg>;
+};
+
+// --- Firebase Setup ---
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+let app, db, auth;
+try {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+} catch (e) {
+    console.error("Firebase initialization failed:", e);
+}
+
+
+// --- Main App Component ---
+export default function App() {
+    const [page, setPage] = useState('dashboard');
+    const [user, setUser] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    // Data states
+    const [products, setProducts] = useState([]);
+    const [customers, setCustomers] = useState([]);
+    const [orders, setOrders] = useState([]);
+    const [transactions, setTransactions] = useState([]);
+
+    // Firestore paths
+    const getCollectionPath = (collectionName) => user ? `/artifacts/${appId}/users/${user.uid}/${collectionName}` : null;
     
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Inter', 'sans-serif'],
-            },
-          },
-        },
-      };
-    </script>
-    
-    <!-- Google Fonts: Inter -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            -webkit-tap-highlight-color: transparent;
+    useEffect(() => {
+        if (!auth) {
+            setLoading(false);
+            return;
         }
-        /* CSS cho chức năng in hóa đơn */
-        @media print {
-            body * {
-                visibility: hidden;
-            }
-            .invoice-print-area, .invoice-print-area * {
-                visibility: visible;
-            }
-            .invoice-print-area {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-                padding: 2rem;
-            }
-            .no-print {
-                display: none;
-            }
-        }
-    </style>
-
-    <!-- React and ReactDOM CDN -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <!-- Babel for JSX transformation in browser (for development/single-file convenience) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-    <!-- Chart.js and React-Chartjs-2 CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/react-chartjs-2@5.2.0/dist/index.min.js"></script>
-
-    <!-- Firebase CDN (Loaded as global scripts) -->
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"></script>
-    
-    <script>
-        // --- Cấu hình Firebase của bạn ---
-        // Đã được thay thế bằng cấu hình bạn cung cấp
-        const YOUR_FIREBASE_CONFIG = {
-            apiKey: "AIzaSyDY-LHMVcRN_mRuxSmO-4fTcQoMQvxaMRE",
-            authDomain: "do12341.firebaseapp.com",
-            projectId: "do12341",
-            storageBucket: "do12341.firebasestorage.app",
-            messagingSenderId: "727920669744",
-            appId: "1:727920669744:web:7e9c43d26626083d6969f5",
-            measurementId: "G-V7RMVF8JDM" // Tùy chọn
-        };
-        // Đây là ID mà bạn dùng trong đường dẫn Firestore (ví dụ: 'default-app-id' hoặc ID Canvas của bạn)
-        // Đã sử dụng appId từ cấu hình Firebase của bạn
-        const YOUR_APP_ID_FOR_COLLECTIONS = "1:727920669744:web:7e9c43d26626083d6969f5"; 
-
-        // Gán cấu hình và ID vào window để React code có thể truy cập
-        window.firebaseConfig = YOUR_FIREBASE_CONFIG;
-        window.appId = YOUR_APP_ID_FOR_COLLECTIONS;
-
-        // Các hàm Firebase sẽ có sẵn qua đối tượng 'firebase' toàn cục sau khi các script trên được tải
-        // Ví dụ: firebase.initializeApp, firebase.auth().signInAnonymously, firebase.firestore().collection
-    </script>
-</head>
-<body class="bg-slate-100 text-gray-800">
-
-    <!-- Div nơi ứng dụng React sẽ được render -->
-    <div id="root"></div>
-
-    <!-- React App Code -->
-    <script type="text/babel">
-        // Bao bọc toàn bộ mã React trong window.onload để đảm bảo tất cả các script đã tải xong
-        window.onload = function() {
-            // Hàm này sẽ cố gắng khởi tạo Firebase và render ứng dụng
-            const initializeAppAndRender = () => {
-                // Kiểm tra nếu đối tượng firebase chưa sẵn sàng
-                if (typeof firebase === 'undefined' || !firebase.initializeApp) {
-                    console.warn("Firebase not yet loaded, retrying initialization...");
-                    setTimeout(initializeAppAndRender, 100); // Thử lại sau 100ms
-                    return;
-                }
-
-                // Khởi tạo Firebase
-                let app, db, auth;
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser) {
+                setUser(currentUser);
+                setLoading(false);
+            } else {
                 try {
-                    // Sử dụng các hàm Firebase từ đối tượng toàn cục
-                    app = firebase.initializeApp(firebaseConfig);
-                    db = firebase.firestore.getFirestore(app);
-                    auth = firebase.auth.getAuth(app);
-                } catch (e) {
-                    console.error("Firebase initialization failed:", e);
-                    // Hiển thị thông báo lỗi thân thiện với người dùng nếu khởi tạo thất bại
-                    ReactDOM.createRoot(document.getElementById('root')).render(
-                        <div className="flex items-center justify-center h-screen bg-slate-100">
-                            <div>Lỗi: Không thể khởi tạo Firebase. Vui lòng kiểm tra cấu hình hoặc kết nối mạng.</div>
-                        </div>
-                    );
-                    return; // Dừng thực thi nếu Firebase init thất bại
-                }
-
-                // Lấy cấu hình và app ID từ window
-                const firebaseConfig = window.firebaseConfig;
-                const appId = window.appId;
-
-                // Đăng ký các thành phần của Chart.js (Sửa để dùng Chart.register với các thành phần từ Chart object)
-                // Chart.js UMD bundle xuất ra đối tượng 'Chart' toàn cục, các thành phần con truy cập qua Chart.CategoryScale, v.v.
-                Chart.register(Chart.CategoryScale, Chart.LinearScale, Chart.BarElement, Chart.Title, Chart.Tooltip, Chart.Legend, Chart.ArcElement);
-
-
-                // --- Hàm trợ giúp & Biểu tượng ---
-
-                /**
-                 * Định dạng số tiền thành tiền tệ Việt Nam Đồng (VND).
-                 * @param {number} amount - Số tiền cần định dạng.
-                 * @returns {string} Chuỗi số tiền đã định dạng.
-                 */
-                const formatCurrency = (amount) => {
-                    if (typeof amount !== 'number') return '0 ₫';
-                    return amount.toLocaleString('vi-VN', { style: 'currency', currency: 'VND' });
-                };
-
-                /**
-                 * Component biểu tượng SVG.
-                 * @param {object} props - Các thuộc tính của component.
-                 * @param {string} props.name - Tên của biểu tượng (ví dụ: 'dashboard', 'plus').
-                 * @param {string} [props.className] - Các lớp CSS bổ sung.
-                 * @returns {JSX.Element} Biểu tượng SVG.
-                 */
-                const Icon = ({ name, className }) => {
-                    const icons = {
-                        dashboard: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h12A2.25 2.25 0 0020.25 14.25V3.75M3.75 3h16.5M3.75 3v1.5M16.5 3v1.5m-12.75 3h11.25" />,
-                        products: <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />,
-                        orders: <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />,
-                        customers: <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.101c1.203-1.824 1.203-4.125 0-5.949a4.125 4.125 0 00-7.533-2.493M3.375 21v-.003c0-1.113.285-2.16.786-3.07M3.375 21v.106A12.318 12.318 0 008.624 21c2.331 0 4.512-.645 6.374-1.766l-.001-.101c-1.203-1.824-1.203-4.125 0-5.949" />,
-                        finance: <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414-.336.75-.75.75h-.75m0-1.5h.375c.621 0 1.125.504 1.125 1.125v.375m-18 0h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6z" />,
-                        reports: <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h15.75c.621 0 1.125.504 1.125 1.125v6.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 19.875v-6.75zM3 8.625c0-.621.504-1.125 1.125-1.125h15.75c.621 0 1.125.504 1.125 1.125v.75c0 .621-.504 1.125-1.125 1.125H4.125A1.125 1.125 0 013 9.375v-.75zM3.75 3a1.125 1.125 0 00-1.125 1.125v.75c0 .621.504 1.125 1.125 1.125h16.5c.621 0 1.125-.504 1.125-1.125v-.75A1.125 1.125 0 0020.25 3H3.75z" />,
-                        ai: <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 3v1.5M4.5 8.25H3m18 0h-1.5M4.5 12H3m18 0h-1.5m-15 3.75H3m18 0h-1.5M8.25 19.5V21M12 3v1.5m0 16.5V21m3.75-18v1.5M19.5 8.25h-1.5m-16.5 0h1.5m15 3.75h-1.5m-15 0h1.5m15 3.75h-1.5m-3.75 3.75v1.5m-3-19.5v1.5" />,
-                        plus: <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />,
-                        send: <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />,
-                        loading: <path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 18a8 8 0 110-16 8 8 0 010 16z" fill="currentColor" fillRule="evenodd" clipRule="evenodd" />,
-                    };
-                    return <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className || "w-6 h-6"}>{icons[name]}</svg>;
-                };
-
-                // --- Component chính của ứng dụng ---
-                function App() { // Đã bỏ 'export default'
-                    const [page, setPage] = React.useState('dashboard');
-                    const [user, setUser] = React.useState(null);
-                    const [loading, setLoading] = React.useState(true);
-
-                    // Trạng thái dữ liệu
-                    const [products, setProducts] = React.useState([]);
-                    const [customers, setCustomers] = React.useState([]);
-                    const [orders, setOrders] = React.useState([]);
-                    const [transactions, setTransactions] = React.useState([]);
-
-                    // Đường dẫn Firestore
-                    const getCollectionPath = (collectionName) => user ? `/artifacts/${appId}/users/${user.uid}/${collectionName}` : null;
-                    
-                    // Khởi tạo Firebase và xác thực người dùng
-                    React.useEffect(() => {
-                        if (!auth) {
-                            setLoading(false);
-                            return;
-                        }
-                        const unsubscribe = firebase.auth.onAuthStateChanged(auth, async (currentUser) => {
-                            if (currentUser) {
-                                setUser(currentUser);
-                                setLoading(false);
-                            } else {
-                                try {
-                                    // Khi nhúng vào HTML, __initial_auth_token sẽ không tồn tại.
-                                    // Chúng ta sẽ luôn thử đăng nhập ẩn danh nếu chưa có người dùng.
-                                    await firebase.auth.signInAnonymously(auth);
-                                } catch (error) {
-                                    console.error("Error signing in:", error);
-                                    setLoading(false);
-                                }
-                            }
-                        });
-                        return () => unsubscribe();
-                    }, []);
-
-                    // Lắng nghe thay đổi dữ liệu từ Firestore
-                    React.useEffect(() => {
-                        if (!user) return;
-
-                        const unsubscribers = [];
-                        const collections = {
-                            products: setProducts,
-                            customers: setCustomers,
-                            orders: setOrders,
-                            transactions: setTransactions,
-                        };
-
-                        for (const [name, setter] of Object.entries(collections)) {
-                            const path = getCollectionPath(name);
-                            if(path){
-                                const q = firebase.firestore.query(firebase.firestore.collection(db, path));
-                                const unsubscribe = firebase.firestore.onSnapshot(q, (querySnapshot) => {
-                                    const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                                    setter(items);
-                                });
-                                unsubscribers.push(unsubscribe);
-                            }
-                        }
-
-                        return () => unsubscribers.forEach(unsub => unsub());
-                    }, [user]);
-
-                    /**
-                     * Thêm tài liệu vào Firestore.
-                     * @param {string} collectionName - Tên bộ sưu tập.
-                     * @param {object} data - Dữ liệu cần thêm.
-                     * @returns {Promise<DocumentReference>} Tham chiếu đến tài liệu mới.
-                     */
-                    const addDocToFirestore = async (collectionName, data) => {
-                        const path = getCollectionPath(collectionName);
-                        if (!path) throw new Error("User not authenticated");
-                        return await firebase.firestore.addDoc(firebase.firestore.collection(db, path), data);
-                    };
-
-                    /**
-                     * Cập nhật hoặc tạo tài liệu trong Firestore.
-                     * @param {string} collectionName - Tên bộ sưu tập.
-                     * @param {string} docId - ID của tài liệu.
-                     * @param {object} data - Dữ liệu cần cập nhật/tạo.
-                     * @returns {Promise<void>}
-                     */
-                    const setDocInFirestore = async (collectionName, docId, data) => {
-                        const path = getCollectionPath(collectionName);
-                        if (!path) throw new Error("User not authenticated");
-                        await firebase.firestore.setDoc(firebase.firestore.doc(db, path, docId), data, { merge: true });
-                    };
-
-                    // Hiển thị trạng thái tải ứng dụng
-                    if (loading) {
-                        return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Đang tải ứng dụng...</div></div>;
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                         await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                         await signInAnonymously(auth);
                     }
-                    
-                    // Hiển thị thông báo nếu không thể xác thực người dùng
-                    if (!user) {
-                        return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Không thể xác thực người dùng. Vui lòng tải lại trang.</div></div>;
-                    }
-
-                    // Render trang hiện tại dựa trên state 'page'
-                    const renderPage = () => {
-                        const props = { products, customers, orders, transactions, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user };
-                        switch (page) {
-                            case 'dashboard': return <Dashboard {...props} />;
-                            case 'products': return <Products {...props} />;
-                            case 'orders': return <Orders {...props} />;
-                            case 'customers': return <Customers {...props} />;
-                            case 'finance': return <Finance {...props} />;
-                            case 'reports': return <Reports {...props} />;
-                            default: return <Dashboard {...props} />;
-                        }
-                    };
-
-                    // Các mục điều hướng
-                    const navItems = [
-                        { id: 'dashboard', name: 'Bảng điều khiển', icon: 'dashboard' },
-                        { id: 'products', name: 'Sản phẩm', icon: 'products' },
-                        { id: 'orders', name: 'Đơn hàng', icon: 'orders' },
-                        { id: 'customers', name: 'Khách hàng', icon: 'customers' },
-                        { id: 'finance', name: 'Tài chính', icon: 'finance' },
-                        { id: 'reports', name: 'Báo cáo', icon: 'reports' },
-                    ];
-
-                    return (
-                        <div className="flex h-screen bg-slate-100 font-sans">
-                            {/* Thanh điều hướng bên trái */}
-                            <nav className="w-64 bg-white border-r border-slate-200 flex flex-col">
-                                <div className="p-4 border-b border-slate-200">
-                                    <h1 className="text-xl font-bold text-slate-800">Ngô Văn Đô</h1>
-                                    <p className="text-xs text-slate-500">Tài chính & Bán hàng</p>
-                                </div>
-                                <ul className="flex-1 p-2">
-                                    {navItems.map(item => (
-                                        <li key={item.id}>
-                                            <a href="#" onClick={(e) => { e.preventDefault(); setPage(item.id); }}
-                                               className={`flex items-center p-3 my-1 rounded-lg transition-colors ${page === item.id ? 'bg-blue-500 text-white' : 'text-slate-700 hover:bg-slate-200'}`}>
-                                                <Icon name={item.icon} className="w-5 h-5 mr-3" />
-                                                <span>{item.name}</span>
-                                            </a>
-                                        </li>
-                                    ))}
-                                </ul>
-                                <div className="p-2 border-t border-slate-200">
-                                    <p className="text-xs text-slate-400 truncate px-2" title={`User ID: ${user.uid}`}>User ID: {user.uid}</p>
-                                </div>
-                            </nav>
-                            {/* Nội dung chính */}
-                            <main className="flex-1 flex flex-col overflow-hidden">
-                                <div className="flex-1 p-6 overflow-y-auto">
-                                    {renderPage()}
-                                </div>
-                                {/* Component thư ký AI */}
-                                <AiSecretary {...{ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }} />
-                            </main>
-                        </div>
-                    );
+                } catch (error) {
+                    console.error("Error signing in:", error);
+                    setLoading(false);
                 }
+            }
+        });
+        return () => unsubscribe();
+    }, []);
 
-                // --- Các Component Trang ---
+    useEffect(() => {
+        if (!user) return;
 
-                /**
-                 * Component Bảng điều khiển (Dashboard).
-                 * Hiển thị tổng quan về các số liệu kinh doanh.
-                 */
-                const Dashboard = ({ products, orders, transactions, customers }) => {
-                    // Tính toán tổng giá trị tồn kho
-                    const totalInventoryValue = React.useMemo(() => products.reduce((sum, p) => sum + (p.stock || 0) * (p.purchasePrice || 0), 0), [products]);
-                    // Tính toán tổng doanh thu
-                    const totalRevenue = React.useMemo(() => orders.reduce((sum, o) => sum + (o.total || 0), 0), [orders]);
-                    
-                    // Tính toán tổng thu, chi, số dư tiền mặt và ngân hàng
-                    const { totalIncome, totalExpense, cashBalance, bankBalance } = React.useMemo(() => {
-                        let income = 0, expense = 0, cash = 0, bank = 0;
-                        transactions.forEach(t => {
-                            if (t.type === 'income') {
-                                income += t.amount;
-                                if (t.account === 'cash') cash += t.amount;
-                                else bank += t.amount;
-                            } else {
-                                expense += t.amount;
-                                if (t.account === 'cash') cash -= t.amount;
-                                else bank -= t.amount;
-                            }
-                        });
-                        return { totalIncome: income, totalExpense: expense, cashBalance: cash, bankBalance: bank };
-                    }, [transactions]);
-                    
-                    // Tính toán tổng công nợ phải thu
-                    const totalDebt = React.useMemo(() => {
-                        const customerDebts = {};
-                        customers.forEach(c => customerDebts[c.id] = 0);
-                        
-                        orders.forEach(order => {
-                            if (order.customerId && customerDebts.hasOwnProperty(order.customerId)) {
-                                const paidAmount = order.paidAmount || 0;
-                                customerDebts[order.customerId] += order.total - paidAmount;
-                            }
-                        });
-                        
-                        return Object.values(customerDebts).reduce((sum, debt) => sum + debt, 0);
-                    }, [orders, customers]);
+        const unsubscribers = [];
+        const collections = {
+            products: setProducts,
+            customers: setCustomers,
+            orders: setOrders,
+            transactions: setTransactions,
+        };
 
-                    // Dữ liệu thống kê hiển thị trên Dashboard
-                    const stats = [
-                        { title: 'Tổng giá trị kho', value: formatCurrency(totalInventoryValue), color: 'bg-blue-500' },
-                        { title: 'Tổng doanh thu', value: formatCurrency(totalRevenue), color: 'bg-green-500' },
-                        { title: 'Công nợ phải thu', value: formatCurrency(totalDebt), color: 'bg-orange-500' },
-                        { title: 'Tổng tài sản', value: formatCurrency(cashBalance + bankBalance), color: 'bg-purple-500' },
-                    ];
+        for (const [name, setter] of Object.entries(collections)) {
+            const path = getCollectionPath(name);
+            if(path){
+                const q = query(collection(db, path));
+                const unsubscribe = onSnapshot(q, (querySnapshot) => {
+                    const items = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setter(items);
+                });
+                unsubscribers.push(unsubscribe);
+            }
+        }
 
-                    return (
-                        <div>
-                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Bảng điều khiển</h2>
-                            {/* Các thẻ thống kê */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                {stats.map(stat => (
-                                    <div key={stat.title} className="bg-white p-6 rounded-lg shadow">
-                                        <h3 className="text-sm font-medium">{stat.title}</h3>
-                                        <p className="text-2xl font-bold text-slate-800 mt-2">{stat.value}</p>
-                                    </div>
-                                ))}
-                            </div>
-                            {/* Biểu đồ Thu vs Chi và Cơ cấu tài sản */}
-                            <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div className="bg-white p-6 rounded-lg shadow">
-                                    <h3 className="font-bold text-slate-800 mb-4">Thu vs Chi</h3>
-                                    <Bar data={{
-                                        labels: ['Tổng'],
-                                        datasets: [
-                                            { label: 'Thu', data: [totalIncome], backgroundColor: 'rgba(59, 130, 246, 0.7)' },
-                                            { label: 'Chi', data: [totalExpense], backgroundColor: 'rgba(239, 68, 68, 0.7)' }
-                                        ]
-                                    }} options={{ responsive: true }} />
-                                </div>
-                                <div className="bg-white p-6 rounded-lg shadow">
-                                    <h3 className="font-bold text-slate-800 mb-4">Cơ cấu tài sản</h3>
-                                    <Pie data={{
-                                        labels: ['Tiền mặt', 'Tài khoản ngân hàng'],
-                                        datasets: [{
-                                            data: [cashBalance, bankBalance],
-                                            backgroundColor: ['rgba(22, 163, 74, 0.7)', 'rgba(37, 99, 235, 0.7)'],
-                                        }]
-                                    }} options={{ responsive: true }} />
-                                </div>
-                            </div>
+        return () => unsubscribers.forEach(unsub => unsub());
+    }, [user]);
+
+    const addDocToFirestore = async (collectionName, data) => {
+        const path = getCollectionPath(collectionName);
+        if (!path) throw new Error("User not authenticated");
+        return await addDoc(collection(db, path), data);
+    };
+
+    const setDocInFirestore = async (collectionName, docId, data) => {
+        const path = getCollectionPath(collectionName);
+        if (!path) throw new Error("User not authenticated");
+        await setDoc(doc(db, path, docId), data, { merge: true });
+    };
+
+    if (loading) {
+        return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Đang tải ứng dụng...</div></div>;
+    }
+    
+    if (!user) {
+        return <div className="flex items-center justify-center h-screen bg-slate-100"><div>Không thể xác thực người dùng. Vui lòng tải lại trang.</div></div>;
+    }
+
+    const renderPage = () => {
+        const props = { products, customers, orders, transactions, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user };
+        switch (page) {
+            case 'dashboard': return <Dashboard {...props} />;
+            case 'products': return <Products {...props} />;
+            case 'orders': return <Orders {...props} />;
+            case 'customers': return <Customers {...props} />;
+            case 'finance': return <Finance {...props} />;
+            case 'reports': return <Reports {...props} />;
+            default: return <Dashboard {...props} />;
+        }
+    };
+
+    const navItems = [
+        { id: 'dashboard', name: 'Bảng điều khiển', icon: 'dashboard' },
+        { id: 'products', name: 'Sản phẩm', icon: 'products' },
+        { id: 'orders', name: 'Đơn hàng', icon: 'orders' },
+        { id: 'customers', name: 'Khách hàng', icon: 'customers' },
+        { id: 'finance', name: 'Tài chính', icon: 'finance' },
+        { id: 'reports', name: 'Báo cáo', icon: 'reports' },
+    ];
+
+    return (
+        <div className="flex h-screen bg-slate-100 font-sans">
+            <nav className="w-64 bg-white border-r border-slate-200 flex flex-col">
+                <div className="p-4 border-b border-slate-200">
+                    <h1 className="text-xl font-bold text-slate-800">Ngô Văn Đô</h1>
+                    <p className="text-xs text-slate-500">Tài chính & Bán hàng</p>
+                </div>
+                <ul className="flex-1 p-2">
+                    {navItems.map(item => (
+                        <li key={item.id}>
+                            <a href="#" onClick={(e) => { e.preventDefault(); setPage(item.id); }}
+                               className={`flex items-center p-3 my-1 rounded-lg transition-colors ${page === item.id ? 'bg-blue-500 text-white' : 'text-slate-700 hover:bg-slate-200'}`}>
+                                <Icon name={item.icon} className="w-5 h-5 mr-3" />
+                                <span>{item.name}</span>
+                            </a>
+                        </li>
+                    ))}
+                </ul>
+                <div className="p-2 border-t border-slate-200">
+                    <p className="text-xs text-slate-400 truncate px-2" title={`User ID: ${user.uid}`}>User ID: {user.uid}</p>
+                </div>
+            </nav>
+            <main className="flex-1 flex flex-col overflow-hidden">
+                <div className="flex-1 p-6 overflow-y-auto">
+                    {renderPage()}
+                </div>
+                <AiSecretary {...{ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }} />
+            </main>
+        </div>
+    );
+}
+
+// --- Page Components ---
+
+const Dashboard = ({ products, orders, transactions, customers }) => {
+    const totalInventoryValue = useMemo(() => products.reduce((sum, p) => sum + (p.stock || 0) * (p.purchasePrice || 0), 0), [products]);
+    const totalRevenue = useMemo(() => orders.reduce((sum, o) => sum + (o.total || 0), 0), [orders]);
+    const { totalIncome, totalExpense, cashBalance, bankBalance } = useMemo(() => {
+        let income = 0, expense = 0, cash = 0, bank = 0;
+        transactions.forEach(t => {
+            if (t.type === 'income') {
+                income += t.amount;
+                if (t.account === 'cash') cash += t.amount;
+                else bank += t.amount;
+            } else {
+                expense += t.amount;
+                if (t.account === 'cash') cash -= t.amount;
+                else bank -= t.amount;
+            }
+        });
+        return { totalIncome: income, totalExpense: expense, cashBalance: cash, bankBalance: bank };
+    }, [transactions]);
+    
+    const totalDebt = useMemo(() => {
+        const customerDebts = {};
+        customers.forEach(c => customerDebts[c.id] = 0);
+        
+        orders.forEach(order => {
+            if (order.customerId && customerDebts.hasOwnProperty(order.customerId)) {
+                const paidAmount = order.paidAmount || 0;
+                customerDebts[order.customerId] += order.total - paidAmount;
+            }
+        });
+        
+        return Object.values(customerDebts).reduce((sum, debt) => sum + debt, 0);
+    }, [orders, customers]);
+
+
+    const stats = [
+        { title: 'Tổng giá trị kho', value: formatCurrency(totalInventoryValue), color: 'bg-blue-500' },
+        { title: 'Tổng doanh thu', value: formatCurrency(totalRevenue), color: 'bg-green-500' },
+        { title: 'Công nợ phải thu', value: formatCurrency(totalDebt), color: 'bg-orange-500' },
+        { title: 'Tổng tài sản', value: formatCurrency(cashBalance + bankBalance), color: 'bg-purple-500' },
+    ];
+
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Bảng điều khiển</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                {stats.map(stat => (
+                    <div key={stat.title} className="bg-white p-6 rounded-lg shadow">
+                        <h3 className="text-slate-500 text-sm font-medium">{stat.title}</h3>
+                        <p className="text-2xl font-bold text-slate-800 mt-2">{stat.value}</p>
+                    </div>
+                ))}
+            </div>
+            <div className="mt-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="font-bold text-slate-800 mb-4">Thu vs Chi</h3>
+                    <Bar data={{
+                        labels: ['Tổng'],
+                        datasets: [
+                            { label: 'Thu', data: [totalIncome], backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+                            { label: 'Chi', data: [totalExpense], backgroundColor: 'rgba(239, 68, 68, 0.7)' }
+                        ]
+                    }} options={{ responsive: true }} />
+                </div>
+                <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="font-bold text-slate-800 mb-4">Cơ cấu tài sản</h3>
+                    <Pie data={{
+                        labels: ['Tiền mặt', 'Tài khoản ngân hàng'],
+                        datasets: [{
+                            data: [cashBalance, bankBalance],
+                            backgroundColor: ['rgba(22, 163, 74, 0.7)', 'rgba(37, 99, 235, 0.7)'],
+                        }]
+                    }} options={{ responsive: true }} />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
+    const [showForm, setShowForm] = useState(false);
+    const [editingProduct, setEditingProduct] = useState(null);
+    const [formData, setFormData] = useState({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
+
+    const handleInputChange = (e) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const data = {
+            name: formData.name,
+            purchasePrice: parseFloat(formData.purchasePrice) || 0,
+            sellingPrice: parseFloat(formData.sellingPrice) || 0,
+            stock: parseInt(formData.stock, 10) || 0,
+        };
+        try {
+            if (editingProduct) {
+                await setDocInFirestore('products', editingProduct.id, data);
+            } else {
+                await addDocToFirestore('products', data);
+            }
+            resetForm();
+        } catch (error) {
+            console.error("Error saving product:", error);
+        }
+    };
+
+    const resetForm = () => {
+        setShowForm(false);
+        setEditingProduct(null);
+        setFormData({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
+    };
+
+    const handleEdit = (product) => {
+        setEditingProduct(product);
+        setFormData({
+            name: product.name,
+            purchasePrice: product.purchasePrice,
+            sellingPrice: product.sellingPrice,
+            stock: product.stock,
+        });
+        setShowForm(true);
+    };
+
+    return (
+        <div>
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-slate-800">Quản lý Sản phẩm</h2>
+                <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
+                    <Icon name="plus" className="w-5 h-5 mr-2" /> Thêm sản phẩm
+                </button>
+            </div>
+
+            {showForm && (
+                <div className="bg-white p-6 rounded-lg shadow mb-6">
+                    <h3 className="font-bold text-lg mb-4">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
+                    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Tên sản phẩm" className="p-2 border rounded" required />
+                        <input type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleInputChange} placeholder="Giá nhập" className="p-2 border rounded" />
+                        <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="Giá bán" className="p-2 border rounded" required />
+                        <input type="number" name="stock" value={formData.stock} onChange={handleInputChange} placeholder="Tồn kho" className="p-2 border rounded" />
+                        <div className="md:col-span-2 flex justify-end gap-2">
+                            <button type="button" onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
+                            <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg">{editingProduct ? 'Lưu thay đổi' : 'Thêm'}</button>
                         </div>
-                    );
-                };
+                    </form>
+                </div>
+            )}
 
-                /**
-                 * Component Quản lý Sản phẩm.
-                 * Cho phép thêm, chỉnh sửa và xem danh sách sản phẩm.
-                 */
-                const Products = ({ products, addDocToFirestore, setDocInFirestore }) => {
-                    const [showForm, setShowForm] = React.useState(false);
-                    const [editingProduct, setEditingProduct] = React.useState(null);
-                    const [formData, setFormData] = React.useState({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="w-full">
+                    <thead className="bg-slate-50 border-b">
+                        <tr>
+                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Tên sản phẩm</th>
+                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá nhập</th>
+                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá bán</th>
+                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Tồn kho</th>
+                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {products.map(p => (
+                            <tr key={p.id} className="border-b hover:bg-slate-50">
+                                <td className="p-3">{p.name}</td>
+                                <td className="p-3">{formatCurrency(p.purchasePrice)}</td>
+                                <td className="p-3">{formatCurrency(p.sellingPrice)}</td>
+                                <td className="p-3">{p.stock}</td>
+                                <td className="p-3">
+                                    <button onClick={() => handleEdit(p)} className="text-blue-500 hover:underline">Sửa</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
 
-                    // Xử lý thay đổi input của form
-                    const handleInputChange = (e) => {
-                        const { name, value } = e.target;
-                        setFormData(prev => ({ ...prev, [name]: value }));
-                    };
+const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionPath, db }) => {
+    const [showForm, setShowForm] = useState(false);
+    const [cart, setCart] = useState([]);
+    const [selectedCustomer, setSelectedCustomer] = useState('');
+    const [invoice, setInvoice] = useState(null);
 
-                    // Xử lý gửi form (thêm/cập nhật sản phẩm)
-                    const handleSubmit = async (e) => {
-                        e.preventDefault();
-                        const data = {
-                            name: formData.name,
-                            purchasePrice: parseFloat(formData.purchasePrice) || 0,
-                            sellingPrice: parseFloat(formData.sellingPrice) || 0,
-                            stock: parseInt(formData.stock, 10) || 0,
-                        };
-                        try {
-                            if (editingProduct) {
-                                await setDocInFirestore('products', editingProduct.id, data);
-                            } else {
-                                await addDocToFirestore('products', data);
-                            }
-                            resetForm();
-                        } catch (error) {
-                            console.error("Error saving product:", error);
+    const handleAddToCart = (product) => {
+        const existing = cart.find(item => item.productId === product.id);
+        if (existing) {
+            if (existing.quantity < product.stock) {
+                setCart(cart.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item));
+            }
+        } else {
+            if (product.stock > 0) {
+                setCart([...cart, { productId: product.id, name: product.name, price: product.sellingPrice, quantity: 1, maxStock: product.stock }]);
+            }
+        }
+    };
+
+    const updateQuantity = (productId, quantity) => {
+        const product = products.find(p => p.id === productId);
+        if (quantity > 0 && quantity <= product.stock) {
+            setCart(cart.map(item => item.productId === productId ? { ...item, quantity } : item));
+        }
+    };
+    
+    const removeFromCart = (productId) => {
+        setCart(cart.filter(item => item.productId !== productId));
+    };
+
+    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
+    const handleSubmitOrder = async () => {
+        if (cart.length === 0 || !selectedCustomer) {
+            // Using a custom modal/alert in the future would be better
+            console.warn("Vui lòng chọn sản phẩm và khách hàng.");
+            return;
+        }
+
+        const orderData = {
+            customerId: selectedCustomer,
+            customerName: customers.find(c => c.id === selectedCustomer)?.name || 'Khách lẻ',
+            items: cart.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity })),
+            total: total,
+            createdAt: new Date().toISOString(),
+            paidAmount: 0, // Default paid amount
+        };
+
+        try {
+            const orderRef = await addDocToFirestore('orders', orderData);
+
+            const batch = writeBatch(db);
+            cart.forEach(item => {
+                const productRef = doc(db, getCollectionPath('products'), item.productId);
+                const product = products.find(p => p.id === item.productId);
+                batch.update(productRef, { stock: product.stock - item.quantity });
+            });
+            await batch.commit();
+            
+            setInvoice({ ...orderData, id: orderRef.id });
+            resetForm();
+        } catch (error) {
+            console.error("Error creating order:", error);
+        }
+    };
+
+    const resetForm = () => {
+        setCart([]);
+        setSelectedCustomer('');
+        setShowForm(false);
+    };
+    
+    const handlePrint = () => {
+        window.print();
+    };
+
+    return (
+        <div>
+            <style>
+                {`
+                    @media print {
+                        body * {
+                            visibility: hidden;
                         }
-                    };
-
-                    // Đặt lại form về trạng thái ban đầu
-                    const resetForm = () => {
-                        setShowForm(false);
-                        setEditingProduct(null);
-                        setFormData({ name: '', purchasePrice: '', sellingPrice: '', stock: '' });
-                    };
-
-                    // Xử lý khi người dùng muốn chỉnh sửa sản phẩm
-                    const handleEdit = (product) => {
-                        setEditingProduct(product);
-                        setFormData({
-                            name: product.name,
-                            purchasePrice: product.purchasePrice,
-                            sellingPrice: product.sellingPrice,
-                            stock: product.stock,
-                        });
-                        setShowForm(true);
-                    };
-
-                    return (
-                        <div>
-                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Sản phẩm</h2>
-                            <div className="flex justify-between items-center mb-6">
-                                <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
-                                    <Icon name="plus" className="w-5 h-5 mr-2" /> Thêm sản phẩm
-                                </button>
-                            </div>
-
-                            {/* Form thêm/chỉnh sửa sản phẩm */}
-                            {showForm && (
-                                <div className="bg-white p-6 rounded-lg shadow mb-6">
-                                    <h3 className="font-bold text-lg mb-4">{editingProduct ? 'Chỉnh sửa sản phẩm' : 'Thêm sản phẩm mới'}</h3>
-                                    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Tên sản phẩm" className="p-2 border rounded" required />
-                                        <input type="number" name="purchasePrice" value={formData.purchasePrice} onChange={handleInputChange} placeholder="Giá nhập" className="p-2 border rounded" />
-                                        <input type="number" name="sellingPrice" value={formData.sellingPrice} onChange={handleInputChange} placeholder="Giá bán" className="p-2 border rounded" required />
-                                        <input type="number" name="stock" value={formData.stock} onChange={handleInputChange} placeholder="Tồn kho" className="p-2 border rounded" />
-                                        <div className="md:col-span-2 flex justify-end gap-2">
-                                            <button type="button" onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
-                                            <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg">{editingProduct ? 'Lưu thay đổi' : 'Thêm'}</button>
-                                        </div>
-                                    </form>
+                        .invoice-print-area, .invoice-print-area * {
+                            visibility: visible;
+                        }
+                        .invoice-print-area {
+                            position: absolute;
+                            left: 0;
+                            top: 0;
+                            width: 100%;
+                            padding: 2rem;
+                        }
+                        .no-print {
+                            display: none;
+                        }
+                    }
+                `}
+            </style>
+            {invoice && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+                    <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl relative">
+                        <div className="invoice-print-area">
+                            <h2 className="text-2xl font-bold mb-4 text-slate-800">Hóa đơn #{invoice.id.substring(0, 6).toUpperCase()}</h2>
+                            <div className="grid grid-cols-2 gap-4 mb-6">
+                                <div>
+                                    <h3 className="font-bold text-slate-600">Cửa hàng:</h3>
+                                    <p>Ngô Văn Đô</p>
+                                    <p>123 Đường ABC, Quận 1, TP. HCM</p>
                                 </div>
-                            )}
-
-                            {/* Bảng danh sách sản phẩm */}
-                            <div className="bg-white rounded-lg shadow overflow-hidden">
-                                <table className="w-full">
-                                    <thead className="bg-slate-50 border-b">
-                                        <tr>
-                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Tên sản phẩm</th>
-                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá nhập</th>
-                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Giá bán</th>
-                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Tồn kho</th>
-                                            <th className="p-3 text-left text-sm font-semibold text-slate-600">Hành động</th>
+                                <div className="text-right">
+                                    <h3 className="font-bold text-slate-600">Khách hàng:</h3>
+                                    <p>{invoice.customerName}</p>
+                                </div>
+                            </div>
+                            <p className="mb-4"><strong>Ngày tạo:</strong> {new Date(invoice.createdAt).toLocaleString('vi-VN')}</p>
+                            <table className="w-full text-left">
+                               <thead className="bg-slate-100">
+                                    <tr>
+                                        <th className="p-2">Sản phẩm</th>
+                                        <th className="p-2 text-right">Số lượng</th>
+                                        <th className="p-2 text-right">Đơn giá</th>
+                                        <th className="p-2 text-right">Thành tiền</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {invoice.items.map(item => (
+                                        <tr key={item.productId} className="border-b">
+                                            <td className="p-2">{item.name}</td>
+                                            <td className="p-2 text-right">{item.quantity}</td>
+                                            <td className="p-2 text-right">{formatCurrency(item.price)}</td>
+                                            <td className="p-2 text-right">{formatCurrency(item.price * item.quantity)}</td>
                                         </tr>
-                                    </thead>
-                                    <tbody>
-                                        {products.map(p => (
-                                            <tr key={p.id} className="border-b hover:bg-slate-50">
-                                                <td className="p-3">{p.name}</td>
-                                                <td className="p-3">{formatCurrency(p.purchasePrice)}</td>
-                                                <td className="p-3">{formatCurrency(p.sellingPrice)}</td>
-                                                <td className="p-3">{p.stock}</td>
-                                                <td className="p-3">
-                                                    <button onClick={() => handleEdit(p)} className="text-blue-500 hover:underline">Sửa</button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                    ))}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <td colSpan="3" className="text-right font-bold p-2 border-t-2 border-slate-600">Tổng cộng:</td>
+                                        <td className="text-right font-bold p-2 border-t-2 border-slate-600">{formatCurrency(invoice.total)}</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                             <div className="text-center mt-8 text-sm text-slate-500">
+                                <p>Cảm ơn quý khách đã mua hàng!</p>
                             </div>
                         </div>
-                    );
-                };
+                        <div className="text-right mt-8 no-print">
+                            <button onClick={handlePrint} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center inline-flex mr-2">
+                                <Icon name="print" className="w-5 h-5 mr-2"/>
+                                In hóa đơn
+                            </button>
+                            <button onClick={() => setInvoice(null)} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">Đóng</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-slate-800">Quản lý Đơn hàng</h2>
+                <button onClick={() => setShowForm(true)} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
+                    <Icon name="plus" className="w-5 h-5 mr-2" /> Lên đơn hàng
+                </button>
+            </div>
 
-                /**
-                 * Component Quản lý Đơn hàng.
-                 * Cho phép tạo đơn hàng mới và xem danh sách các đơn hàng đã tạo.
-                 */
-                const Orders = ({ products, customers, orders, addDocToFirestore, getCollectionPath, db }) => {
-                    const [showForm, setShowForm] = React.useState(false);
-                    const [cart, setCart] = React.useState([]);
-                    const [selectedCustomer, setSelectedCustomer] = React.useState('');
-                    const [invoice, setInvoice] = React.useState(null);
+            {showForm && (
+                <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow">
+                         <h3 className="font-bold text-lg mb-4">Chọn sản phẩm</h3>
+                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                             {products.map(p => (
+                                 <div key={p.id} onClick={() => handleAddToCart(p)} className={`border rounded-lg p-3 cursor-pointer ${p.stock > 0 ? 'hover:border-blue-500' : 'opacity-50 cursor-not-allowed'}`}>
+                                     <p className="font-bold">{p.name}</p>
+                                     <p className="text-sm text-green-600">{formatCurrency(p.sellingPrice)}</p>
+                                     <p className="text-xs text-slate-500">Tồn kho: {p.stock}</p>
+                                 </div>
+                             ))}
+                         </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-lg shadow">
+                        <h3 className="font-bold text-lg mb-4">Thông tin đơn hàng</h3>
+                        <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full p-2 border rounded mb-4">
+                            <option value="">Chọn khách hàng</option>
+                            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                            {cart.map(item => (
+                                <div key={item.productId} className="flex justify-between items-center">
+                                    <div>
+                                        <p className="font-semibold">{item.name}</p>
+                                        <p className="text-sm">{formatCurrency(item.price)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input type="number" value={item.quantity} onChange={(e) => updateQuantity(item.productId, parseInt(e.target.value))} className="w-16 p-1 border rounded" />
+                                        <button onClick={() => removeFromCart(item.productId)} className="text-red-500">Xóa</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="border-t pt-4">
+                            <p className="text-lg font-bold flex justify-between">Tổng: <span>{formatCurrency(total)}</span></p>
+                            <div className="flex justify-end gap-2 mt-4">
+                               <button onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
+                               <button onClick={handleSubmitOrder} className="bg-green-500 text-white px-4 py-2 rounded-lg">Tạo đơn</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
-                    // Thêm sản phẩm vào giỏ hàng
-                    const handleAddToCart = (product) => {
-                        const existing = cart.find(item => item.productId === product.id);
-                        if (existing) {
-                            if (existing.quantity < product.stock) {
-                                setCart(cart.map(item => item.productId === product.id ? { ...item, quantity: item.quantity + 1 } : item));
-                            }
-                        } else {
-                            if (product.stock > 0) {
-                                setCart([...cart, { productId: product.id, name: product.name, price: product.sellingPrice, quantity: 1, maxStock: product.stock }]);
-                            }
-                        }
-                    };
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="w-full">
+                    <thead className="bg-slate-50 border-b">
+                        <tr>
+                            <th className="p-3 text-left">Mã ĐH</th>
+                            <th className="p-3 text-left">Khách hàng</th>
+                            <th className="p-3 text-left">Ngày tạo</th>
+                            <th className="p-3 text-left">Tổng tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => (
+                            <tr key={o.id} className="border-b hover:bg-slate-50">
+                                <td className="p-3 text-sm font-mono">{o.id.substring(0, 6)}</td>
+                                <td className="p-3">{o.customerName}</td>
+                                <td className="p-3">{new Date(o.createdAt).toLocaleDateString('vi-VN')}</td>
+                                <td className="p-3">{formatCurrency(o.total)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
 
-                    // Cập nhật số lượng sản phẩm trong giỏ hàng
-                    const updateQuantity = (productId, quantity) => {
-                        const product = products.find(p => p.id === productId);
-                        if (quantity > 0 && quantity <= product.stock) {
-                            setCart(cart.map(item => item.productId === productId ? { ...item, quantity } : item));
-                        }
-                    };
+const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) => {
+    const [showForm, setShowForm] = useState(false);
+    const [editingCustomer, setEditingCustomer] = useState(null);
+    const [formData, setFormData] = useState({ name: '', phone: '', address: '' });
+    const [selectedCustomer, setSelectedCustomer] = useState(null);
+
+    const customerOrders = useMemo(() => {
+        if (!selectedCustomer) return [];
+        return orders.filter(o => o.customerId === selectedCustomer.id);
+    }, [selectedCustomer, orders]);
+
+    const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            if (editingCustomer) {
+                await setDocInFirestore('customers', editingCustomer.id, formData);
+            } else {
+                await addDocToFirestore('customers', formData);
+            }
+            resetForm();
+        } catch (error) {
+            console.error("Error saving customer:", error);
+        }
+    };
+
+    const resetForm = () => {
+        setShowForm(false);
+        setEditingCustomer(null);
+        setFormData({ name: '', phone: '', address: '' });
+    };
+
+    const handleEdit = (customer) => {
+        setEditingCustomer(customer);
+        setFormData({ name: customer.name, phone: customer.phone || '', address: customer.address || '' });
+        setShowForm(true);
+    };
+
+    return (
+        <div>
+            {selectedCustomer && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
+                    <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-3xl">
+                        <h3 className="font-bold text-xl mb-4">Lịch sử đơn hàng của {selectedCustomer.name}</h3>
+                        <div className="max-h-96 overflow-y-auto">
+                            <table className="w-full">
+                                <thead className="bg-slate-50 border-b">
+                                    <tr>
+                                        <th className="p-2 text-left">Mã ĐH</th>
+                                        <th className="p-2 text-left">Ngày</th>
+                                        <th className="p-2 text-right">Tổng tiền</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {customerOrders.map(o => (
+                                        <tr key={o.id} className="border-b">
+                                            <td className="p-2 font-mono text-sm">{o.id.substring(0,6)}</td>
+                                            <td className="p-2">{new Date(o.createdAt).toLocaleDateString('vi-VN')}</td>
+                                            <td className="p-2 text-right">{formatCurrency(o.total)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="text-right mt-6">
+                            <button onClick={() => setSelectedCustomer(null)} className="bg-blue-500 text-white px-4 py-2 rounded-lg">Đóng</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-slate-800">Quản lý Khách hàng</h2>
+                <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
+                    <Icon name="plus" className="w-5 h-5 mr-2" /> Thêm khách hàng
+                </button>
+            </div>
+
+            {showForm && (
+                <div className="bg-white p-6 rounded-lg shadow mb-6">
+                    <h3 className="font-bold text-lg mb-4">{editingCustomer ? 'Chỉnh sửa khách hàng' : 'Thêm khách hàng mới'}</h3>
+                    <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Tên khách hàng" className="p-2 border rounded" required />
+                        <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Số điện thoại" className="p-2 border rounded" />
+                        <input type="text" name="address" value={formData.address} onChange={handleInputChange} placeholder="Địa chỉ" className="p-2 border rounded md:col-span-2" />
+                        <div className="md:col-span-2 flex justify-end gap-2">
+                            <button type="button" onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
+                            <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg">{editingCustomer ? 'Lưu' : 'Thêm'}</button>
+                        </div>
+                    </form>
+                </div>
+            )}
+
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="w-full">
+                    <thead className="bg-slate-50 border-b">
+                        <tr>
+                            <th className="p-3 text-left">Tên khách hàng</th>
+                            <th className="p-3 text-left">SĐT</th>
+                            <th className="p-3 text-left">Địa chỉ</th>
+                            <th className="p-3 text-left">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {customers.map(c => (
+                            <tr key={c.id} className="border-b hover:bg-slate-50">
+                                <td className="p-3">{c.name}</td>
+                                <td className="p-3">{c.phone}</td>
+                                <td className="p-3">{c.address}</td>
+                                <td className="p-3 space-x-4">
+                                    <button onClick={() => handleEdit(c)} className="text-blue-500 hover:underline">Sửa</button>
+                                    <button onClick={() => setSelectedCustomer(c)} className="text-green-500 hover:underline">Xem ĐH</button>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const Finance = ({ transactions, addDocToFirestore }) => {
+    const [formData, setFormData] = useState({ type: 'expense', description: '', amount: '', account: 'cash', date: new Date().toISOString().split('T')[0] });
+
+    const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        const data = {
+            ...formData,
+            amount: parseFloat(formData.amount),
+        };
+        try {
+            await addDocToFirestore('transactions', data);
+            setFormData({ type: 'expense', description: '', amount: '', account: 'cash', date: new Date().toISOString().split('T')[0] });
+        } catch (error) {
+            console.error("Error adding transaction:", error);
+        }
+    };
+
+    const { income, expense, cash, bank } = useMemo(() => {
+        let i = 0, e = 0, c = 0, b = 0;
+        transactions.forEach(t => {
+            if (t.type === 'income') {
+                i += t.amount;
+                if (t.account === 'cash') c += t.amount; else b += t.amount;
+            } else {
+                e += t.amount;
+                if (t.account === 'cash') c -= t.amount; else b -= t.amount;
+            }
+        });
+        return { income: i, expense: e, cash: c, bank: b };
+    }, [transactions]);
+
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Tài chính cá nhân</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="bg-white p-4 rounded-lg shadow text-center">
+                    <h3 className="text-slate-500">Tiền mặt</h3>
+                    <p className="text-xl font-bold text-green-600">{formatCurrency(cash)}</p>
+                </div>
+                <div className="bg-white p-4 rounded-lg shadow text-center">
+                    <h3 className="text-slate-500">Tài khoản</h3>
+                    <p className="text-xl font-bold text-blue-600">{formatCurrency(bank)}</p>
+                </div>
+                 <div className="bg-white p-4 rounded-lg shadow text-center">
+                    <h3 className="text-slate-500">Tổng cộng</h3>
+                    <p className="text-xl font-bold text-purple-600">{formatCurrency(cash + bank)}</p>
+                </div>
+            </div>
+            <div className="bg-white p-6 rounded-lg shadow mb-6">
+                <h3 className="font-bold text-lg mb-4">Thêm giao dịch</h3>
+                <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+                    <select name="type" value={formData.type} onChange={handleInputChange} className="p-2 border rounded">
+                        <option value="expense">Khoản chi</option>
+                        <option value="income">Khoản thu</option>
+                    </select>
+                    <input type="text" name="description" value={formData.description} onChange={handleInputChange} placeholder="Nội dung" className="p-2 border rounded lg:col-span-2" required />
+                    <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="Số tiền" className="p-2 border rounded" required />
+                    <div className="flex gap-4">
+                        <select name="account" value={formData.account} onChange={handleInputChange} className="p-2 border rounded w-full">
+                            <option value="cash">Tiền mặt</option>
+                            <option value="bank">Tài khoản</option>
+                        </select>
+                        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg w-full">Thêm</button>
+                    </div>
+                </form>
+            </div>
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+                <table className="w-full">
+                    <thead className="bg-slate-50 border-b">
+                        <tr>
+                            <th className="p-3 text-left">Ngày</th>
+                            <th className="p-3 text-left">Nội dung</th>
+                            <th className="p-3 text-left">Loại</th>
+                            <th className="p-3 text-left">Tài khoản</th>
+                            <th className="p-3 text-right">Số tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {transactions.sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
+                            <tr key={t.id} className="border-b hover:bg-slate-50">
+                                <td className="p-3">{new Date(t.date).toLocaleDateString('vi-VN')}</td>
+                                <td className="p-3">{t.description}</td>
+                                <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${t.type === 'income' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{t.type === 'income' ? 'Thu' : 'Chi'}</span></td>
+                                <td className="p-3">{t.account === 'cash' ? 'Tiền mặt' : 'Tài khoản'}</td>
+                                <td className="p-3 text-right font-semibold" style={{color: t.type === 'income' ? 'green' : 'red'}}>{formatCurrency(t.amount)}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+const Reports = ({ orders, customers, transactions, products }) => {
+    const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+    const [aiAnalysis, setAiAnalysis] = useState('');
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+    const monthlyData = useMemo(() => {
+        const filteredOrders = orders.filter(o => o.createdAt.startsWith(month));
+        const filteredTransactions = transactions.filter(t => t.date.startsWith(month));
+
+        const revenue = filteredOrders.reduce((sum, o) => sum + o.total, 0);
+        const costOfGoods = filteredOrders.reduce((sum, o) => {
+            return sum + o.items.reduce((itemSum, item) => {
+                const product = products.find(p => p.id === item.productId);
+                return itemSum + (product ? product.purchasePrice * item.quantity : 0);
+            }, 0);
+        }, 0);
+        const grossProfit = revenue - costOfGoods;
+
+        const income = filteredTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+        const expense = filteredTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+
+        return { revenue, costOfGoods, grossProfit, income, expense };
+    }, [month, orders, transactions, products]);
+
+    const debtData = useMemo(() => {
+        const customerDebts = {};
+        customers.forEach(c => {
+            customerDebts[c.id] = { name: c.name, debt: 0 };
+        });
+
+        orders.forEach(order => {
+            if (order.customerId && customerDebts[order.customerId]) {
+                customerDebts[order.customerId].debt += order.total - (order.paidAmount || 0);
+            }
+        });
+        
+        return Object.values(customerDebts).filter(c => c.debt > 0);
+    }, [customers, orders]);
+
+    const handleAnalyze = async () => {
+        setIsAnalyzing(true);
+        setAiAnalysis('');
+        const summary = `
+            Dữ liệu tài chính tháng ${month}:
+            - Doanh thu bán hàng: ${formatCurrency(monthlyData.revenue)}
+            - Giá vốn hàng bán: ${formatCurrency(monthlyData.costOfGoods)}
+            - Lợi nhuận gộp: ${formatCurrency(monthlyData.grossProfit)}
+            - Thu nhập khác (ngoài bán hàng): ${formatCurrency(monthlyData.income)}
+            - Chi phí khác (ngoài giá vốn): ${formatCurrency(monthlyData.expense)}
+            - Lợi nhuận ròng (ước tính): ${formatCurrency(monthlyData.grossProfit + monthlyData.income - monthlyData.expense)}
+            - Tổng công nợ phải thu: ${formatCurrency(debtData.reduce((s, d) => s + d.debt, 0))}
+        `;
+        const prompt = `Bạn là một chuyên gia phân tích tài chính. Dựa vào các số liệu sau, hãy viết một bản phân tích chi tiết về tình hình kinh doanh và tài chính trong tháng, sau đó đưa ra 3 lời khuyên cụ thể, khả thi để cải thiện. Trả lời bằng tiếng Việt. \n\n${summary}`;
+        
+        try {
+            const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            
+            if (result.candidates && result.candidates[0].content.parts[0].text) {
+                setAiAnalysis(result.candidates[0].content.parts[0].text.replace(/\n/g, '<br />'));
+            } else {
+                setAiAnalysis("Không thể phân tích. Vui lòng thử lại.");
+            }
+        } catch (error) {
+            console.error("AI analysis error:", error);
+            setAiAnalysis("Đã xảy ra lỗi khi kết nối với AI.");
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+
+    return (
+        <div>
+            <h2 className="text-2xl font-bold text-slate-800 mb-6">Báo cáo</h2>
+            <div className="mb-6">
+                <label htmlFor="month-select" className="mr-2">Chọn tháng:</label>
+                <input type="month" id="month-select" value={month} onChange={e => setMonth(e.target.value)} className="p-2 border rounded" />
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Financial Report */}
+                <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="font-bold text-lg mb-4">Báo cáo tài chính tháng {month}</h3>
+                    <ul className="space-y-2">
+                        <li className="flex justify-between"><span>Doanh thu:</span> <span className="font-semibold">{formatCurrency(monthlyData.revenue)}</span></li>
+                        <li className="flex justify-between"><span>Giá vốn hàng bán:</span> <span className="font-semibold">{formatCurrency(monthlyData.costOfGoods)}</span></li>
+                        <li className="flex justify-between border-t pt-2 font-bold"><span>Lợi nhuận gộp:</span> <span>{formatCurrency(monthlyData.grossProfit)}</span></li>
+                        <li className="flex justify-between mt-4"><span>Thu nhập khác:</span> <span className="font-semibold">{formatCurrency(monthlyData.income)}</span></li>
+                        <li className="flex justify-between"><span>Chi phí khác:</span> <span className="font-semibold">{formatCurrency(monthlyData.expense)}</span></li>
+                        <li className="flex justify-between border-t pt-2 font-bold text-blue-600"><span>Lợi nhuận ròng (ước tính):</span> <span>{formatCurrency(monthlyData.grossProfit + monthlyData.income - monthlyData.expense)}</span></li>
+                    </ul>
+                    <button onClick={handleAnalyze} disabled={isAnalyzing} className="mt-6 w-full bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center justify-center hover:bg-blue-600 disabled:bg-slate-400">
+                        {isAnalyzing ? <Icon name="loading" className="w-5 h-5 mr-2 animate-spin" /> : <Icon name="ai" className="w-5 h-5 mr-2" />}
+                        {isAnalyzing ? 'Đang phân tích...' : 'Phân tích & Lời khuyên từ AI'}
+                    </button>
+                    {aiAnalysis && (
+                        <div className="mt-4 p-4 bg-slate-50 rounded-lg border">
+                            <h4 className="font-bold mb-2">Phân tích từ AI:</h4>
+                            <p className="text-sm" dangerouslySetInnerHTML={{ __html: aiAnalysis }}></p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Debt Report */}
+                <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="font-bold text-lg mb-4">Báo cáo công nợ phải thu</h3>
+                    <div className="max-h-96 overflow-y-auto">
+                        <table className="w-full">
+                            <thead className="bg-slate-50 border-b">
+                                <tr>
+                                    <th className="p-2 text-left">Khách hàng</th>
+                                    <th className="p-2 text-right">Số nợ</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {debtData.map(d => (
+                                    <tr key={d.name} className="border-b">
+                                        <td className="p-2">{d.name}</td>
+                                        <td className="p-2 text-right font-semibold text-red-600">{formatCurrency(d.debt)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+// --- AI Component ---
+
+const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }) => {
+    const [input, setInput] = useState('');
+    const [messages, setMessages] = useState([{ sender: 'ai', text: 'Xin chào, tôi là thư ký AI của bạn. Bạn cần giúp gì?' }]);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    useEffect(scrollToBottom, [messages]);
+
+    const handleSendMessage = async () => {
+        if (!input.trim() || isProcessing) return;
+        const userMessage = { sender: 'user', text: input };
+        setMessages(prev => [...prev, userMessage]);
+        setInput('');
+        setIsProcessing(true);
+
+        const prompt = `
+            You are an AI secretary for a business management app. Your task is to interpret the user's Vietnamese request and convert it into a structured JSON command.
+            Respond ONLY with the JSON object. Do not add any explanation or conversational text.
+            The user's data includes:
+            - Products: ${JSON.stringify(products.map(p => ({id: p.id, name: p.name, stock: p.stock})))}
+            - Customers: ${JSON.stringify(customers.map(c => ({id: c.id, name: c.name})))}
+
+            The JSON must have a "command" and a "payload". Supported commands:
+            1.  "addProduct": { "name": string, "purchasePrice": number, "sellingPrice": number, "stock": number }
+            2.  "addStock": { "productName": string, "quantity": number }
+            3.  "createOrder": { "customerName": string, "items": [{ "productName": string, "quantity": number }] }
+            4.  "addCustomer": { "name": string, "phone": string, "address": string }
+            5.  "addTransaction": { "type": "income" | "expense", "description": string, "amount": number, "account": "cash" | "bank" }
+            6. "query": { "question": string } // For general questions about data
+
+            Analyze the user's message: "${userMessage.text}"
+            - Infer product/customer names even if they are slightly misspelled. Match them to the provided lists.
+            - For prices like "100k", convert to 100000.
+            - If a customer doesn't exist for an order, use the name provided by the user. The system will handle creating a new one if needed.
+        `;
+
+        try {
+            const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = {
+                contents: chatHistory,
+                generationConfig: { responseMimeType: "application/json" }
+            };
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            
+            const jsonText = result.candidates[0].content.parts[0].text;
+            const data = JSON.parse(jsonText);
+            await processCommand(data);
+
+        } catch (error) {
+            console.error("AI processing error:", error);
+            setMessages(prev => [...prev, { sender: 'ai', text: 'Tôi không hiểu yêu cầu của bạn. Vui lòng thử lại với cấu trúc rõ ràng hơn.' }]);
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const processCommand = async (data) => {
+        let aiResponse = 'Đã hiểu. Đang xử lý...';
+        try {
+            switch (data.command) {
+                case 'addProduct':
+                    await addDocToFirestore('products', data.payload);
+                    aiResponse = `Đã thêm sản phẩm mới: ${data.payload.name}.`;
+                    break;
+                case 'addStock': {
+                    const product = products.find(p => p.name.toLowerCase() === data.payload.productName.toLowerCase());
+                    if (product) {
+                        await setDocInFirestore('products', product.id, { stock: product.stock + data.payload.quantity });
+                        aiResponse = `Đã cập nhật tồn kho cho ${product.name} thêm ${data.payload.quantity}. Tồn kho mới: ${product.stock + data.payload.quantity}.`;
+                    } else {
+                        aiResponse = `Không tìm thấy sản phẩm tên là "${data.payload.productName}".`;
+                    }
+                    break;
+                }
+                case 'createOrder': {
+                    let customer = customers.find(c => c.name.toLowerCase() === data.payload.customerName.toLowerCase());
+                    if (!customer) {
+                        const newCustomerRef = await addDocToFirestore('customers', { name: data.payload.customerName });
+                        customer = { id: newCustomerRef.id, name: data.payload.customerName };
+                        aiResponse = `Đã tạo khách hàng mới: ${customer.name}. `;
+                    }
+
+                    const orderItems = [];
+                    let total = 0;
+                    let validOrder = true;
                     
-                    // Xóa sản phẩm khỏi giỏ hàng
-                    const removeFromCart = (productId) => {
-                        setCart(cart.filter(item => item.productId !== productId));
-                    };
-
-                    // Tính tổng giá trị đơn hàng
-                    const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-
-                    // Xử lý khi gửi đơn hàng
-                    const handleSubmitOrder = async () => {
-                        if (cart.length === 0 || !selectedCustomer) {
-                            console.warn("Vui lòng chọn sản phẩm và khách hàng.");
-                            return;
+                    for (const item of data.payload.items) {
+                        const product = products.find(p => p.name.toLowerCase() === item.productName.toLowerCase());
+                        if (product && product.stock >= item.quantity) {
+                            orderItems.push({
+                                productId: product.id,
+                                name: product.name,
+                                price: product.sellingPrice,
+                                quantity: item.quantity
+                            });
+                            total += product.sellingPrice * item.quantity;
+                        } else {
+                            validOrder = false;
+                            aiResponse = `Không thể tạo đơn: sản phẩm "${item.productName}" không tồn tại hoặc không đủ hàng.`;
+                            break;
                         }
+                    }
 
+                    if (validOrder) {
                         const orderData = {
-                            customerId: selectedCustomer,
-                            customerName: customers.find(c => c.id === selectedCustomer)?.name || 'Khách lẻ',
-                            items: cart.map(({ productId, name, price, quantity }) => ({ productId, name, price, quantity })),
+                            customerId: customer.id,
+                            customerName: customer.name,
+                            items: orderItems,
                             total: total,
                             createdAt: new Date().toISOString(),
-                            paidAmount: 0, // Mặc định số tiền đã thanh toán
+                            paidAmount: 0,
                         };
-
-                        try {
-                            const orderRef = await addDocToFirestore('orders', orderData);
-
-                            // Cập nhật tồn kho sản phẩm bằng batch write
-                            const batch = firebase.firestore.writeBatch(db);
-                            cart.forEach(item => {
-                                const productRef = firebase.firestore.doc(db, getCollectionPath('products'), item.productId);
-                                const product = products.find(p => p.id === item.productId);
-                                batch.update(productRef, { stock: product.stock - item.quantity });
-                            });
-                            await batch.commit();
-                            
-                            setInvoice({ ...orderData, id: orderRef.id });
-                            resetForm();
-                        } catch (error) {
-                            console.error("Error creating order:", error);
-                        }
-                    };
-
-                    // Đặt lại form đơn hàng
-                    const resetForm = () => {
-                        setCart([]);
-                        setSelectedCustomer('');
-                        setShowForm(false);
-                    };
-                    
-                    // Xử lý in hóa đơn
-                    const handlePrint = () => {
-                        window.print();
-                    };
-
-                    return (
-                        <div>
-                            {/* Modal hóa đơn */}
-                            {invoice && (
-                                <div className="fixed inset-0 bg-black bg-opacity50 flex justify-center items-center z-50 p-4">
-                                    <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl relative">
-                                        <div className="invoice-print-area">
-                                            <h2 className="text-2xl font-bold mb-4 text-slate-800">Hóa đơn #{invoice.id.substring(0, 6).toUpperCase()}</h2>
-                                            <div className="grid grid-cols-2 gap-4 mb-6">
-                                                <div>
-                                                    <h3 className="font-bold text-slate-600">Cửa hàng:</h3>
-                                                    <p>Ngô Văn Đô</p>
-                                                    <p>123 Đường ABC, Quận 1, TP. HCM</p>
-                                                </div>
-                                                <div className="text-right">
-                                                    <h3 className="font-bold text-slate-600">Khách hàng:</h3>
-                                                    <p>{invoice.customerName}</p>
-                                                </div>
-                                            </div>
-                                            <p className="mb-4"><strong>Ngày tạo:</strong> {new Date(invoice.createdAt).toLocaleString('vi-VN')}</p>
-                                            <table className="w-full text-left">
-                                               <thead className="bg-slate-100">
-                                                    <tr>
-                                                        <th className="p-2">Sản phẩm</th>
-                                                        <th className="p-2 text-right">Số lượng</th>
-                                                        <th className="p-2 text-right">Đơn giá</th>
-                                                        <th className="p-2 text-right">Thành tiền</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {invoice.items.map(item => (
-                                                        <tr key={item.productId} className="border-b">
-                                                            <td className="p-2">{item.name}</td>
-                                                            <td className="p-2 text-right">{item.quantity}</td>
-                                                            <td className="p-2 text-right">{formatCurrency(item.price)}</td>
-                                                            <td className="p-2 text-right">{formatCurrency(item.price * item.quantity)}</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                                <tfoot>
-                                                    <tr>
-                                                        <td colSpan="3" className="text-right font-bold p-2 border-t-2 border-slate-600">Tổng cộng:</td>
-                                                        <td className="text-right font-bold p-2 border-t-2 border-slate-600">{formatCurrency(invoice.total)}</td>
-                                                    </tr>
-                                                </tfoot>
-                                            </table>
-                                             <div className="text-center mt-8 text-sm text-slate-500">
-                                                <p>Cảm ơn quý khách đã mua hàng!</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right mt-8 no-print">
-                                            <button onClick={handlePrint} className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 flex items-center inline-flex mr-2">
-                                                <Icon name="print" className="w-5 h-5 mr-2"/>
-                                                In hóa đơn
-                                            </button>
-                                            <button onClick={() => setInvoice(null)} className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">Đóng</button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-                            
-                            <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Đơn hàng</h2>
-                            <div className="flex justify-between items-center mb-6">
-                                <button onClick={() => setShowForm(true)} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
-                                    <Icon name="plus" className="w-5 h-5 mr-2" /> Lên đơn hàng
-                                </button>
-                            </div>
-
-                            {/* Form tạo đơn hàng */}
-                            {showForm && (
-                                <div className="mb-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                    <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow">
-                                         <h3 className="font-bold text-lg mb-4">Chọn sản phẩm</h3>
-                                         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                                             {products.map(p => (
-                                                 <div key={p.id} onClick={() => handleAddToCart(p)} className={`border rounded-lg p-3 cursor-pointer ${p.stock > 0 ? 'hover:border-blue-500' : 'opacity-50 cursor-not-allowed'}`}>
-                                                     <p className="font-bold">{p.name}</p>
-                                                     <p className="text-sm text-green-600">{formatCurrency(p.sellingPrice)}</p>
-                                                     <p className="text-xs text-slate-500">Tồn kho: {p.stock}</p>
-                                                 </div>
-                                             ))}
-                                         </div>
-                                    </div>
-                                    <div className="bg-white p-6 rounded-lg shadow">
-                                        <h3 className="font-bold text-lg mb-4">Thông tin đơn hàng</h3>
-                                        <select value={selectedCustomer} onChange={e => setSelectedCustomer(e.target.value)} className="w-full p-2 border rounded mb-4">
-                                            <option value="">Chọn khách hàng</option>
-                                            {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                                        </select>
-                                        <div className="space-y-2 mb-4 max-h-60 overflow-y-auto">
-                                            {cart.map(item => (
-                                                <div key={item.productId} className="flex justify-between items-center">
-                                                    <div>
-                                                        <p className="font-semibold">{item.name}</p>
-                                                        <p className="text-sm">{formatCurrency(item.price)}</p>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <input type="number" value={item.quantity} onChange={(e) => updateQuantity(item.productId, parseInt(e.target.value))} className="w-16 p-1 border rounded" />
-                                                        <button onClick={() => removeFromCart(item.productId)} className="text-red-500">Xóa</button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="border-t pt-4">
-                                            <p className="text-lg font-bold flex justify-between">Tổng: <span>{formatCurrency(total)}</span></p>
-                                            <div className="flex justify-end gap-2 mt-4">
-                                               <button onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
-                                               <button onClick={handleSubmitOrder} className="bg-green-500 text-white px-4 py-2 rounded-lg">Tạo đơn</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Bảng danh sách đơn hàng */}
-                            <div className="bg-white rounded-lg shadow overflow-hidden">
-                                <table className="w-full">
-                                    <thead className="bg-slate-50 border-b">
-                                        <tr>
-                                            <th className="p-3 text-left">Mã ĐH</th>
-                                            <th className="p-3 text-left">Khách hàng</th>
-                                            <th className="p-3 text-left">Ngày tạo</th>
-                                            <th className="p-3 text-left">Tổng tiền</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map(o => (
-                                        <tr key={o.id} className="border-b hover:bg-slate-50">
-                                            <td className="p-3 text-sm font-mono">{o.id.substring(0, 6)}</td>
-                                            <td className="p-3">{o.customerName}</td>
-                                            <td className="p-3">{new Date(o.createdAt).toLocaleDateString('vi-VN')}</td>
-                                            <td className="p-3">{formatCurrency(o.total)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            };
-
-            /**
-             * Component Quản lý Khách hàng.
-             * Cho phép thêm, chỉnh sửa và xem lịch sử đơn hàng của khách hàng.
-             */
-            const Customers = ({ customers, orders, addDocToFirestore, setDocInFirestore }) => {
-                const [showForm, setShowForm] = React.useState(false);
-                const [editingCustomer, setEditingCustomer] = React.useState(null);
-                const [formData, setFormData] = React.useState({ name: '', phone: '', address: '' });
-                const [selectedCustomer, setSelectedCustomer] = React.useState(null); // Để hiển thị modal lịch sử đơn hàng
-
-                // Lọc đơn hàng theo khách hàng đã chọn
-                const customerOrders = React.useMemo(() => {
-                    if (!selectedCustomer) return [];
-                    return orders.filter(o => o.customerId === selectedCustomer.id);
-                }, [selectedCustomer, orders]);
-
-                // Tính tổng công nợ của khách hàng đã chọn
-                const totalCustomerDebt = React.useMemo(() => {
-                    if (!selectedCustomer) return 0;
-                    return customerOrders.reduce((sum, order) => sum + (order.total - (order.paidAmount || 0)), 0);
-                }, [selectedCustomer, customerOrders]);
-
-                // Xử lý thay đổi input của form
-                const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
-                // Xử lý gửi form (thêm/cập nhật khách hàng)
-                const handleSubmit = async (e) => {
-                    e.preventDefault();
-                    try {
-                        if (editingCustomer) {
-                            await setDocInFirestore('customers', editingCustomer.id, formData);
-                        } else {
-                            await addDocToFirestore('customers', formData);
-                        }
-                        resetForm();
-                    } catch (error) {
-                        console.error("Error saving customer:", error);
-                    }
-                };
-
-                // Đặt lại form về trạng thái ban đầu
-                const resetForm = () => {
-                    setShowForm(false);
-                    setEditingCustomer(null);
-                    setFormData({ name: '', phone: '', address: '' });
-                };
-
-                // Xử lý khi người dùng muốn chỉnh sửa khách hàng
-                const handleEdit = (customer) => {
-                    setEditingCustomer(customer);
-                    setFormData({ name: customer.name, phone: customer.phone || '', address: customer.address || '' });
-                    setShowForm(true);
-                };
-
-                return (
-                    <div>
-                        {/* Modal lịch sử đơn hàng của khách hàng */}
-                        {selectedCustomer && (
-                            <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4">
-                                <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-3xl">
-                                    <h3 className="font-bold text-xl mb-4">Lịch sử đơn hàng của {selectedCustomer.name}</h3>
-                                    <p className="mb-4 text-lg font-semibold text-red-600">Tổng công nợ: {formatCurrency(totalCustomerDebt)}</p>
-                                    <div className="max-h-96 overflow-y-auto">
-                                        <table className="w-full">
-                                            <thead className="bg-slate-50 border-b">
-                                                <tr>
-                                                    <th className="p-2 text-left">Mã ĐH</th>
-                                                    <th className="p-2 text-left">Ngày</th>
-                                                    <th className="p-2 text-right">Tổng tiền</th>
-                                                    <th className="p-2 text-right">Đã thanh toán</th>
-                                                    <th className="p-2 text-right">Còn nợ</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {customerOrders.map(o => (
-                                                    <tr key={o.id} className="border-b">
-                                                        <td className="p-2 font-mono text-sm">{o.id.substring(0,6)}</td>
-                                                        <td className="p-2">{new Date(o.createdAt).toLocaleDateString('vi-VN')}</td>
-                                                        <td className="p-2 text-right">{formatCurrency(o.total)}</td>
-                                                        <td className="p-2 text-right">{formatCurrency(o.paidAmount || 0)}</td>
-                                                        <td className="p-2 text-right font-semibold text-red-600">{formatCurrency(o.total - (o.paidAmount || 0))}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    <div className="text-right mt-6">
-                                        <button onClick={() => setSelectedCustomer(null)} className="bg-blue-500 text-white px-4 py-2 rounded-lg">Đóng</button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Khách hàng</h2>
-                        <div className="flex justify-between items-center mb-6">
-                            <button onClick={() => { resetForm(); setShowForm(true); }} className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center hover:bg-blue-600">
-                                <Icon name="plus" className="w-5 h-5 mr-2" /> Thêm khách hàng
-                            </button>
-                        </div>
-
-                        {/* Form thêm/chỉnh sửa khách hàng */}
-                        {showForm && (
-                            <div className="bg-white p-6 rounded-lg shadow mb-6">
-                                <h3 className="font-bold text-lg mb-4">{editingCustomer ? 'Chỉnh sửa khách hàng' : 'Thêm khách hàng mới'}</h3>
-                                <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <input type="text" name="name" value={formData.name} onChange={handleInputChange} placeholder="Tên khách hàng" className="p-2 border rounded" required />
-                                    <input type="text" name="phone" value={formData.phone} onChange={handleInputChange} placeholder="Số điện thoại" className="p-2 border rounded" />
-                                    <input type="text" name="address" value={formData.address} onChange={handleInputChange} placeholder="Địa chỉ" className="p-2 border rounded md:col-span-2" />
-                                    <div className="md:col-span-2 flex justify-end gap-2">
-                                        <button type="button" onClick={resetForm} className="bg-slate-200 px-4 py-2 rounded-lg">Hủy</button>
-                                        <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg">{editingCustomer ? 'Lưu' : 'Thêm'}</button>
-                                    </div>
-                                </form>
-                            </div>
-                        )}
-
-                        {/* Bảng danh sách khách hàng */}
-                        <div className="bg-white rounded-lg shadow overflow-hidden">
-                            <table className="w-full">
-                                <thead className="bg-slate-50 border-b">
-                                    <tr>
-                                        <th className="p-3 text-left">Tên khách hàng</th>
-                                        <th className="p-3 text-left">SĐT</th>
-                                        <th className="p-3 text-left">Địa chỉ</th>
-                                        <th className="p-3 text-left">Hành động</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {customers.map(c => (
-                                        <tr key={c.id} className="border-b hover:bg-slate-50">
-                                            <td className="p-3">{c.name}</td>
-                                            <td className="p-3">{c.phone}</td>
-                                            <td className="p-3">{c.address}</td>
-                                            <td className="p-3 space-x-4">
-                                                <button onClick={() => handleEdit(c)} className="text-blue-500 hover:underline">Sửa</button>
-                                                <button onClick={() => setSelectedCustomer(c)} className="text-green-500 hover:underline">Xem ĐH</button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            };
-
-            /**
-             * Component Quản lý Tài chính cá nhân.
-             * Cho phép ghi nhận các khoản thu chi và xem số dư tài khoản.
-             */
-            const Finance = ({ transactions, addDocToFirestore }) => {
-                const [formData, setFormData] = React.useState({ type: 'expense', description: '', amount: '', account: 'cash', date: new Date().toISOString().split('T')[0] });
-
-                // Xử lý thay đổi input của form
-                const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
-                // Xử lý gửi form (thêm giao dịch)
-                const handleSubmit = async (e) => {
-                    e.preventDefault();
-                    const data = {
-                        ...formData,
-                        amount: parseFloat(formData.amount),
-                    };
-                    try {
-                        await addDocToFirestore('transactions', data);
-                        setFormData({ type: 'expense', description: '', amount: '', account: 'cash', date: new Date().toISOString().split('T')[0] });
-                    } catch (error) {
-                        console.error("Error adding transaction:", error);
-                    }
-                };
-
-                // Tính toán tổng thu, chi, số dư tiền mặt và ngân hàng
-                const { income, expense, cash, bank } = React.useMemo(() => {
-                    let i = 0, e = 0, c = 0, b = 0;
-                    transactions.forEach(t => {
-                        if (t.type === 'income') {
-                            i += t.amount;
-                            if (t.account === 'cash') c += t.amount;
-                            else bank += t.amount;
-                        } else {
-                            expense += t.amount;
-                            if (t.account === 'cash') c -= t.amount;
-                            else bank -= t.amount;
-                        }
-                    });
-                    return { income: i, expense: e, cash: c, bank: b };
-                }, [transactions]);
-
-                return (
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-6">Quản lý Tài chính cá nhân</h2>
-                        {/* Các thẻ tổng quan tài chính */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                            <div className="bg-white p-4 rounded-lg shadow text-center">
-                                <h3 className="text-slate-500">Tiền mặt</h3>
-                                <p className="text-xl font-bold text-green-600">{formatCurrency(cash)}</p>
-                            </div>
-                            <div className="bg-white p-4 rounded-lg shadow text-center">
-                                <h3 className="text-slate-500">Tài khoản</h3>
-                                <p className="text-xl font-bold text-blue-600">{formatCurrency(bank)}</p>
-                            </div>
-                               <div className="bg-white p-4 rounded-lg shadow text-center">
-                                <h3 className="text-slate-500">Tổng cộng</h3>
-                                <p className="text-xl font-bold text-purple-600">{formatCurrency(cash + bank)}</p>
-                            </div>
-                        </div>
-                        {/* Form thêm giao dịch */}
-                        <div className="bg-white p-6 rounded-lg shadow mb-6">
-                            <h3 className="font-bold text-lg mb-4">Thêm giao dịch</h3>
-                            <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
-                                <select name="type" value={formData.type} onChange={handleInputChange} className="p-2 border rounded">
-                                    <option value="expense">Khoản chi</option>
-                                    <option value="income">Khoản thu</option>
-                                </select>
-                                <input type="text" name="description" value={formData.description} onChange={handleInputChange} placeholder="Nội dung" className="p-2 border rounded lg:col-span-2" required />
-                                <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="Số tiền" className="p-2 border rounded" required />
-                                <div className="flex gap-4">
-                                    <select name="account" value={formData.account} onChange={handleInputChange} className="p-2 border rounded w-full">
-                                        <option value="cash">Tiền mặt</option>
-                                        <option value="bank">Tài khoản</option>
-                                    </select>
-                                    <button type="submit" className="bg-green-500 text-white px-4 py-2 rounded-lg w-full">Thêm</button>
-                                </div>
-                            </form>
-                        </div>
-                        {/* Bảng danh sách giao dịch */}
-                        <div className="bg-white rounded-lg shadow overflow-hidden">
-                            <table className="w-full">
-                                <thead className="bg-slate-50 border-b">
-                                    <tr>
-                                        <th className="p-3 text-left">Ngày</th>
-                                        <th className="p-3 text-left">Nội dung</th>
-                                        <th className="p-3 text-left">Loại</th>
-                                        <th className="p-3 text-left">Tài khoản</th>
-                                        <th className="p-3 text-right">Số tiền</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {transactions.sort((a,b) => new Date(b.date) - new Date(a.date)).map(t => (
-                                        <tr key={t.id} className="border-b hover:bg-slate-50">
-                                            <td className="p-3">{new Date(t.date).toLocaleDateString('vi-VN')}</td>
-                                            <td className="p-3">{t.description}</td>
-                                            <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs ${t.type === 'income' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{t.type === 'income' ? 'Thu' : 'Chi'}</span></td>
-                                            <td className="p-3">{t.account === 'cash' ? 'Tiền mặt' : 'Tài khoản'}</td>
-                                            <td className="p-3 text-right font-semibold" style={{color: t.type === 'income' ? 'green' : 'red'}}>{formatCurrency(t.amount)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            };
-
-            /**
-             * Component Báo cáo.
-             * Hiển thị báo cáo tài chính hàng tháng và công nợ phải thu, có tích hợp phân tích AI.
-             */
-            const Reports = ({ orders, customers, transactions, products }) => {
-                const [month, setMonth] = React.useState(new Date().toISOString().slice(0, 7));
-                const [aiAnalysis, setAiAnalysis] = React.useState('');
-                const [isAnalyzing, setIsAnalyzing] = React.useState(false);
-
-                // Tính toán dữ liệu tài chính hàng tháng
-                const monthlyData = React.useMemo(() => {
-                    const filteredOrders = orders.filter(o => o.createdAt.startsWith(month));
-                    const filteredTransactions = transactions.filter(t => t.date.startsWith(month));
-
-                    const revenue = filteredOrders.reduce((sum, o) => sum + o.total, 0);
-                    const costOfGoods = filteredOrders.reduce((sum, o) => { // Đã sửa lỗi cú pháp tại đây
-                        return sum + o.items.reduce((itemSum, item) => {
+                        await addDocToFirestore('orders', orderData);
+                        
+                        const batch = writeBatch(db);
+                        orderItems.forEach(item => {
+                            const productRef = doc(db, getCollectionPath('products'), item.productId);
                             const product = products.find(p => p.id === item.productId);
-                            return itemSum + (product ? product.purchasePrice * item.quantity : 0);
-                        }, 0);
-                    }, 0);
-                    const grossProfit = revenue - costOfGoods;
-
-                    const income = filteredTransactions.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
-                    const expense = filteredTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
-
-                    return { revenue, costOfGoods, grossProfit, income, expense };
-                }, [month, orders, transactions, products]);
-
-                // Tính toán dữ liệu công nợ phải thu
-                const debtData = React.useMemo(() => {
-                    const customerDebts = {};
-                    customers.forEach(c => {
-                        customerDebts[c.id] = { name: c.name, debt: 0 };
-                    });
-
-                    orders.forEach(order => {
-                        if (order.customerId && customerDebts.hasOwnProperty(order.customerId)) {
-                            const paidAmount = order.paidAmount || 0;
-                            customerDebts[order.customerId].debt += order.total - (order.paidAmount || 0);
-                        }
-                    });
-                    
-                    return Object.values(customerDebts).filter(c => c.debt > 0);
-                }, [customers, orders]);
-
-                // Xử lý phân tích AI
-                const handleAnalyze = async () => {
-                    setIsAnalyzing(true);
-                    setAiAnalysis(''); // Xóa phân tích cũ
-                    const summary = `
-                        Dữ liệu tài chính tháng ${month}:
-                        - Doanh thu bán hàng: ${formatCurrency(monthlyData.revenue)}
-                        - Giá vốn hàng bán: ${formatCurrency(monthlyData.costOfGoods)}
-                        - Lợi nhuận gộp: ${formatCurrency(monthlyData.grossProfit)}
-                        - Thu nhập khác (ngoài bán hàng): ${formatCurrency(monthlyData.income)}
-                        - Chi phí khác (ngoài giá vốn): ${formatCurrency(monthlyData.expense)}
-                        - Lợi nhuận ròng (ước tính): ${formatCurrency(monthlyData.grossProfit + monthlyData.income - monthlyData.expense)}
-                        - Tổng công nợ phải thu: ${formatCurrency(debtData.reduce((s, d) => s + d.debt, 0))}
-                    `;
-                    const prompt = `Bạn là một chuyên gia phân tích tài chính. Dựa vào các số liệu sau, hãy viết một bản phân tích chi tiết về tình hình kinh doanh và tài chính trong tháng, sau đó đưa ra 3 lời khuyên cụ thể, khả thi để cải thiện. Trả lời bằng tiếng Việt. \n\n${summary}`;
-                    
-                    try {
-                        const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-                        const payload = {
-                            contents: chatHistory,
-                            generationConfig: { responseMimeType: "application/json" }
-                        };
-                        
-                        // Thay đổi để gọi Serverless Function
-                        const response = await fetch('/api/gemini', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
+                            batch.update(productRef, { stock: product.stock - item.quantity });
                         });
-                        const result = await response.json();
-                        
-                        if (result.text) { // Serverless Function trả về trực tiếp text
-                            // Thay thế ký tự xuống dòng bằng <br /> để hiển thị đúng trong HTML
-                            setAiAnalysis(result.text.replace(/\n/g, '<br />'));
-                        } else {
-                            setAiAnalysis("Không thể phân tích. Vui lòng thử lại.");
-                        }
-                    } catch (error) {
-                        console.error("AI analysis error:", error);
-                        setAiAnalysis("Đã xảy ra lỗi khi kết nối với AI.");
-                    } finally {
-                        setIsAnalyzing(false);
+                        await batch.commit();
+
+                        aiResponse += `Đã tạo đơn hàng mới cho ${customer.name} với tổng giá trị ${formatCurrency(total)}.`;
                     }
-                };
+                    break;
+                }
+                case 'addCustomer':
+                    await addDocToFirestore('customers', data.payload);
+                    aiResponse = `Đã thêm khách hàng mới: ${data.payload.name}.`;
+                    break;
+                case 'addTransaction':
+                    await addDocToFirestore('transactions', data.payload);
+                    aiResponse = `Đã ghi nhận một khoản ${data.payload.type === 'income' ? 'thu' : 'chi'} trị giá ${formatCurrency(data.payload.amount)}.`;
+                    break;
+                case 'query':
+                    // This is a simple example. More complex queries would need more logic.
+                    if (data.payload.question.toLowerCase().includes("tồn kho")) {
+                         const productName = data.payload.question.split("tồn kho của")[1]?.trim() || data.payload.question.split("tồn kho")[1]?.trim();
+                         const product = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
+                         if (product) {
+                            aiResponse = `Tồn kho của ${product.name} là ${product.stock}.`;
+                         } else {
+                            aiResponse = `Không tìm thấy sản phẩm ${productName}.`;
+                         }
+                    } else {
+                        aiResponse = "Tôi chưa thể trả lời câu hỏi này.";
+                    }
+                    break;
+                default:
+                    aiResponse = 'Lệnh không được hỗ trợ.';
+            }
+        } catch (e) {
+            console.error("Command processing error:", e);
+            aiResponse = 'Đã xảy ra lỗi khi xử lý yêu cầu của bạn.';
+        }
+        setMessages(prev => [...prev, { sender: 'ai', text: aiResponse }]);
+    };
 
-                return (
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-6">Báo cáo</h2>
-                        <div className="mb-6">
-                            <label htmlFor="month-select" className="mr-2">Chọn tháng:</label>
-                            <input type="month" id="month-select" value={month} onChange={e => setMonth(e.target.value)} className="p-2 border rounded" />
-                        </div>
-
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Báo cáo tài chính */}
-                            <div className="bg-white p-6 rounded-lg shadow">
-                                <h3 className="font-bold text-lg mb-4">Báo cáo tài chính tháng {month}</h3>
-                                <ul className="space-y-2">
-                                    <li className="flex justify-between"><span>Doanh thu:</span> <span className="font-semibold">{formatCurrency(monthlyData.revenue)}</span></li>
-                                    <li className="flex justify-between"><span>Giá vốn hàng bán:</span> <span className="font-semibold">{formatCurrency(monthlyData.costOfGoods)}</span></li>
-                                    <li className="flex justify-between border-t pt-2 font-bold"><span>Lợi nhuận gộp:</span> <span>{formatCurrency(monthlyData.grossProfit)}</span></li>
-                                    <li className="flex justify-between mt-4"><span>Thu nhập khác:</span> <span className="font-semibold">{formatCurrency(monthlyData.income)}</span></li>
-                                    <li className="flex justify-between"><span>Chi phí khác:</span> <span className="font-semibold">{formatCurrency(monthlyData.expense)}</span></li>
-                                    <li className="flex justify-between border-t pt-2 font-bold text-blue-600"><span>Lợi nhuận ròng (ước tính):</span> <span>{formatCurrency(monthlyData.grossProfit + monthlyData.income - monthlyData.expense)}</span></li>
-                                </ul>
-                                {/* Nút phân tích AI */}
-                                <button onClick={handleAnalyze} disabled={isAnalyzing} className="mt-6 w-full bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center justify-center hover:bg-blue-600 disabled:bg-slate-400">
-                                    {isAnalyzing ? <Icon name="loading" className="w-5 h-5 mr-2 animate-spin" /> : <Icon name="ai" className="w-5 h-5 mr-2" />}
-                                    {isAnalyzing ? 'Đang phân tích...' : 'Phân tích & Lời khuyên từ AI'}
-                                </button>
-                                {/* Kết quả phân tích AI */}
-                                {aiAnalysis && (
-                                    <div className="mt-4 p-4 bg-slate-50 rounded-lg border">
-                                        <h4 className="font-bold mb-2">Phân tích từ AI:</h4>
-                                        <p className="text-sm" dangerouslySetInnerHTML={{ __html: aiAnalysis }}></p>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Báo cáo công nợ phải thu */}
-                            <div className="bg-white p-6 rounded-lg shadow">
-                                <h3 className="font-bold text-lg mb-4">Báo cáo công nợ phải thu</h3>
-                                <div className="max-h-96 overflow-y-auto">
-                                    <table className="w-full">
-                                        <thead className="bg-slate-50 border-b">
-                                            <tr>
-                                                <th className="p-2 text-left">Khách hàng</th>
-                                                <th className="p-2 text-right">Số nợ</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {debtData.map(d => (
-                                                <tr key={d.name} className="border-b">
-                                                    <td className="p-2">{d.name}</td>
-                                                    <td className="p-2 text-right font-semibold text-red-600">{formatCurrency(d.debt)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+    return (
+        <div className="border-t border-slate-200 bg-white">
+            <div className="p-4">
+                <div className="h-40 overflow-y-auto p-2 bg-slate-50 rounded-lg mb-2">
+                    {messages.map((msg, index) => (
+                        <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-xs lg:max-w-md p-2 px-3 rounded-lg mb-2 ${msg.sender === 'user' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-800'}`}>
+                                {msg.text}
                             </div>
                         </div>
-                    </div>
-                );
-            };
-
-
-            // --- Component Thư ký AI (Chatbot) ---
-
-            const AiSecretary = ({ products, customers, addDocToFirestore, setDocInFirestore, getCollectionPath, db, user, transactions, orders }) => {
-                const [input, setInput] = React.useState('');
-                const [messages, setMessages] = React.useState([{ sender: 'ai', text: 'Xin chào, tôi là thư ký AI của bạn. Bạn cần giúp gì?' }]);
-                const [isProcessing, setIsProcessing] = React.useState(false);
-                const messagesEndRef = React.useRef(null);
-
-                // Cuộn xuống cuối tin nhắn
-                const scrollToBottom = () => {
-                    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-                };
-
-                React.useEffect(scrollToBottom, [messages]);
-
-                // Xử lý gửi tin nhắn đến AI
-                const handleSendMessage = async () => {
-                    if (!input.trim() || isProcessing) return;
-                    const userMessage = { sender: 'user', text: input };
-                    setMessages(prev => [...prev, userMessage]);
-                    setInput('');
-                    setIsProcessing(true);
-
-                    // Tạo prompt cho AI để phân tích yêu cầu người dùng và trả về JSON
-                    const prompt = `
-                        You are an AI secretary for a business management app. Your task is to interpret the user's Vietnamese request and convert it into a structured JSON command.
-                        Respond ONLY with the JSON object. Do not add any explanation or conversational text.
-                        The user's data includes:
-                        - Products: ${JSON.stringify(products.map(p => ({id: p.id, name: p.name, stock: p.stock})))}
-                        - Customers: ${JSON.stringify(customers.map(c => ({id: c.id, name: c.name})))}
-
-                        The JSON must have a "command" and a "payload". Supported commands:
-                        1.  "addProduct": { "name": string, "purchasePrice": number, "sellingPrice": number, "stock": number }
-                        2.  "addStock": { "productName": string, "quantity": number }
-                        3.  "createOrder": { "customerName": string, "items": [{ "productName": string, "quantity": number }] }
-                        4.  "addCustomer": { "name": string, "phone": string, "address": string }
-                        5.  "addTransaction": { "type": "income" | "expense", "description": string, "amount": number, "account": "cash" | "bank" }
-                        6. "query": { "question": string } // For general questions about data
-
-                        Analyze the user's message: "${userMessage.text}"
-                        - Infer product/customer names even if they are slightly misspelled. Match them to the provided lists.
-                        - For prices like "100k", convert to 100000.
-                        - If a customer doesn't exist for an order, use the name provided by the user. The system will handle creating a new one if needed.
-                    `;
-
-                    try {
-                        const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-                        const payload = {
-                            contents: chatHistory,
-                            generationConfig: { responseMimeType: "application/json" }
-                        };
-                        
-                        // Thay đổi để gọi Serverless Function
-                        const response = await fetch('/api/gemini', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-                        const result = await response.json();
-                        
-                        const jsonText = result.text; // Serverless Function trả về trực tiếp JSON string trong thuộc tính 'text'
-                        const data = JSON.parse(jsonText); // Parse JSON từ phản hồi của AI
-                        await processCommand(data); // Xử lý lệnh được tạo bởi AI
-
-                    } catch (error) {
-                        console.error("AI processing error:", error);
-                        setMessages(prev => [...prev, { sender: 'ai', text: 'Tôi không hiểu yêu cầu của bạn. Vui lòng thử lại với cấu trúc rõ ràng hơn.' }]);
-                    } finally {
-                        setIsProcessing(false);
-                    }
-                };
-
-                // Xử lý các lệnh được tạo bởi AI
-                const processCommand = async (data) => {
-                    let aiResponse = 'Đã hiểu. Đang xử lý...';
-                    try {
-                        switch (data.command) {
-                            case 'addProduct':
-                                await addDocToFirestore('products', data.payload);
-                                aiResponse = `Đã thêm sản phẩm mới: ${data.payload.name}.`;
-                                break;
-                            case 'addStock': {
-                                // Tìm sản phẩm dựa trên tên (không phân biệt chữ hoa/thường)
-                                const product = products.find(p => p.name.toLowerCase() === data.payload.productName.toLowerCase());
-                                if (product) {
-                                    await setDocInFirestore('products', product.id, { stock: product.stock + data.payload.quantity });
-                                    aiResponse = `Đã cập nhật tồn kho cho ${product.name} thêm ${data.payload.quantity}. Tồn kho mới: ${product.stock + data.payload.quantity}.`;
-                                } else {
-                                    aiResponse = `Không tìm thấy sản phẩm tên là "${data.payload.productName}".`;
-                                }
-                                break;
-                            }
-                            case 'createOrder': {
-                                // Tìm khách hàng hoặc tạo mới nếu chưa tồn tại
-                                let customer = customers.find(c => c.name.toLowerCase() === data.payload.customerName.toLowerCase());
-                                if (!customer) {
-                                    const newCustomerRef = await addDocToFirestore('customers', { name: data.payload.customerName });
-                                    customer = { id: newCustomerRef.id, name: data.payload.customerName };
-                                    aiResponse = `Đã tạo khách hàng mới: ${customer.name}. `;
-                                }
-
-                                const orderItems = [];
-                                let total = 0;
-                                let validOrder = true;
-                                
-                                // Kiểm tra và thêm các mặt hàng vào đơn hàng
-                                for (const item of data.payload.items) {
-                                    const product = products.find(p => p.name.toLowerCase() === item.productName.toLowerCase());
-                                    if (product && product.stock >= item.quantity) {
-                                        orderItems.push({
-                                            productId: product.id,
-                                            name: product.name,
-                                            price: product.sellingPrice,
-                                            quantity: item.quantity
-                                        });
-                                        total += product.sellingPrice * item.quantity;
-                                    } else {
-                                        validOrder = false;
-                                        aiResponse = `Không thể tạo đơn: sản phẩm "${item.productName}" không tồn tại hoặc không đủ hàng.`;
-                                        break;
-                                    }
-                                }
-
-                                if (validOrder) {
-                                    const orderData = {
-                                        customerId: customer.id,
-                                        customerName: customer.name,
-                                        items: orderItems,
-                                        total: total,
-                                        createdAt: new Date().toISOString(),
-                                        paidAmount: 0,
-                                    };
-                                    await addDocToFirestore('orders', orderData);
-                                    
-                                    // Cập nhật tồn kho bằng batch write
-                                    const batch = firebase.firestore.writeBatch(db);
-                                    orderItems.forEach(item => {
-                                        const productRef = firebase.firestore.doc(db, getCollectionPath('products'), item.productId);
-                                        const product = products.find(p => p.id === item.productId);
-                                        batch.update(productRef, { stock: product.stock - item.quantity });
-                                    });
-                                    await batch.commit();
-
-                                    aiResponse += `Đã tạo đơn hàng mới cho ${customer.name} với tổng giá trị ${formatCurrency(total)}.`;
-                                }
-                                break;
-                            }
-                            case 'addCustomer':
-                                await addDocToFirestore('customers', data.payload);
-                                aiResponse = `Đã thêm khách hàng mới: ${data.payload.name}.`;
-                                break;
-                            case 'addTransaction':
-                                await addDocToFirestore('transactions', data.payload);
-                                aiResponse = `Đã ghi nhận một khoản ${data.payload.type === 'income' ? 'thu' : 'chi'} trị giá ${formatCurrency(data.payload.amount)}.`;
-                                break;
-                            case 'query':
-                                // Ví dụ đơn giản cho truy vấn tồn kho
-                                if (data.payload.question.toLowerCase().includes("tồn kho của")) {
-                                    const productName = data.payload.question.split("tồn kho của")[1]?.trim();
-                                    const product = products.find(p => p.name.toLowerCase() === productName.toLowerCase());
-                                    if (product) {
-                                        aiResponse = `Tồn kho của ${product.name} là ${product.stock}.`;
-                                    } else {
-                                        aiResponse = `Không tìm thấy sản phẩm ${productName}.`;
-                                    }
-                                } else if (data.payload.question.toLowerCase().includes("tồn kho")) {
-                                    // Handle generic "tồn kho" query (e.g., list all products with low stock)
-                                    const lowStockProducts = products.filter(p => p.stock < 10).map(p => `${p.name} (${p.stock})`);
-                                    if (lowStockProducts.length > 0) {
-                                        aiResponse = `Một số sản phẩm có tồn kho thấp: ${lowStockProducts.join(', ')}.`;
-                                    } else {
-                                        aiResponse = `Tất cả sản phẩm đều có tồn kho đủ.`;
-                                    }
-                                } else if (data.payload.question.toLowerCase().includes("doanh thu")) {
-                                    const totalRevenue = orders.reduce((sum, o) => sum + (o.total || 0), 0);
-                                    aiResponse = `Tổng doanh thu hiện tại là ${formatCurrency(totalRevenue)}.`;
-                                }
-                                else {
-                                    aiResponse = "Tôi chưa thể trả lời câu hỏi này.";
-                                }
-                                break;
-                            default:
-                                aiResponse = 'Lệnh không được hỗ trợ.';
-                        }
-                    } catch (error) { // Đổi e thành error để khớp với console.error
-                        console.error("Command processing error:", error);
-                        aiResponse = 'Đã xảy ra lỗi khi xử lý yêu cầu của bạn.';
-                    }
-                    setMessages(prev => [...prev, { sender: 'ai', text: aiResponse }]);
-                };
-
-                return (
-                    <div className="border-t border-slate-200 bg-white">
-                        <div className="p-4">
-                            {/* Khu vực hiển thị tin nhắn chat */}
-                            <div className="h-40 overflow-y-auto p-2 bg-slate-50 rounded-lg mb-2">
-                                {messages.map((msg, index) => (
-                                    <div key={index} className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                                        <div className={`max-w-xs lg:max-w-md p-2 px-3 rounded-lg mb-2 ${msg.sender === 'user' ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-800'}`}>
-                                            {msg.text}
-                                        </div>
-                                    </div>
-                                ))}
-                                {/* Hiển thị trạng thái đang xử lý của AI */}
-                                {isProcessing && (
-                                        <div className="flex justify-start">
-                                            <div className="bg-slate-200 text-slate-800 p-2 px-3 rounded-lg mb-2 inline-flex items-center">
-                                               <Icon name="loading" className="w-4 h-4 mr-2 animate-spin" />
-                                               <span>Đang xử lý...</span>
-                                            </div>
-                                        </div>
-                                )}
-                                <div ref={messagesEndRef} /> {/* Dùng để cuộn xuống cuối */}
-                            </div>
-                            {/* Thanh nhập liệu và nút gửi */}
-                            <div className="flex items-center gap-2">
-                                <Icon name="ai" className="w-6 h-6 text-slate-500" />
-                                <input
-                                    type="text"
-                                    value={input}
-                                    onChange={e => setInput(e.target.value)}
-                                    onKeyPress={e => e.key === 'Enter' && handleSendMessage()}
-                                    placeholder="Trò chuyện với AI để nhập liệu (ví dụ: 'bán 2 áo thun cho anh Ba')..."
-                                    className="flex-1 p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    disabled={isProcessing}
-                                />
-                                <button onClick={handleSendMessage} disabled={isProcessing} className="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 disabled:bg-slate-400">
-                                    <Icon name="send" className="w-6 h-6" />
-                                </button>
+                    ))}
+                    {isProcessing && (
+                         <div className="flex justify-start">
+                            <div className="bg-slate-200 text-slate-800 p-2 px-3 rounded-lg mb-2 inline-flex items-center">
+                               <Icon name="loading" className="w-4 h-4 mr-2 animate-spin" />
+                               <span>Đang xử lý...</span>
                             </div>
                         </div>
-                    </div>
-                );
-            };
-
-            // Render ứng dụng React vào div có id="root"
-            const root = ReactDOM.createRoot(document.getElementById('root'));
-            root.render(<App />);
-        }; // Kết thúc window.onload
-    </script>
-</body>
-</html>
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
+                <div className="flex items-center gap-2">
+                    <Icon name="ai" className="w-6 h-6 text-slate-500" />
+                    <input
+                        type="text"
+                        value={input}
+                        onChange={e => setInput(e.target.value)}
+                        onKeyPress={e => e.key === 'Enter' && handleSendMessage()}
+                        placeholder="Trò chuyện với AI để nhập liệu (ví dụ: 'bán 2 áo thun cho anh Ba')..."
+                        className="flex-1 p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        disabled={isProcessing}
+                    />
+                    <button onClick={handleSendMessage} disabled={isProcessing} className="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 disabled:bg-slate-400">
+                        <Icon name="send" className="w-6 h-6" />
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
