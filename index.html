@@ -196,8 +196,8 @@ const App = () => {
                     {currentPage === 'orders' && <Orders />}
                     {currentPage === 'customers' && <Customers />}
                     {currentPage === 'finance' && <Finance />}
-                    {currentPage === 'reports' && <Reports />}
                     {currentPage === 'ai_chat' && <AIChat />}
+                    {currentPage === 'reports' && <Reports />}
                 </main>
             </div>
         </AppContext.Provider>
@@ -392,7 +392,7 @@ const Products = () => {
         }
 
         try {
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+            const appId = typeof __app_id !== 'undefined' ? __app_id :'default-app-id';
             const productRef = doc(db, `artifacts/${appId}/users/${userId}/products`, editingProduct.id);
             await updateDoc(productRef, {
                 name: editingProduct.name,
@@ -1375,7 +1375,7 @@ const AIChat = () => {
     const [isThinking, setIsThinking] = useState(false);
     const chatContainerRef = useRef(null);
 
-    // Scroll to bottom of chat history
+    // Cuộn xuống cuối lịch sử trò chuyện
     useEffect(() => {
         if (chatContainerRef.current) {
             chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -1414,7 +1414,7 @@ const AIChat = () => {
                 return null;
             }
         } catch (error) {
-            console.error("Error calling Gemini API:", error);
+            console.error("Lỗi khi gọi API Gemini:", error);
             showAppMessage("Lỗi khi kết nối với AI. Vui lòng thử lại.", 5000);
             setIsThinking(false);
             return null;
@@ -1427,13 +1427,13 @@ const AIChat = () => {
         const userMessage = input.trim();
         setInput('');
 
-        // Check for specific commands
+        // Kiểm tra các lệnh cụ thể
         if (userMessage.toLowerCase().includes("lời khuyên tài chính")) {
             await provideFinancialAdvice();
             return;
         }
 
-        // Attempt to parse as data entry
+        // Thử phân tích cú pháp dưới dạng mục nhập dữ liệu
         const dataEntrySchema = {
             type: "OBJECT",
             properties: {
@@ -1724,3 +1724,4 @@ const AIChat = () => {
 };
 
 export default App;
+
